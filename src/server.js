@@ -11,7 +11,10 @@ const prisma = new PrismaClient({
     },
   },
   log: ['error', 'warn'],
-  errorFormat: 'minimal'
+  errorFormat: 'minimal',
+  transactionOptions: {
+    timeout: 30000,
+  }
 });
 
 const PORT = process.env.PORT || 5000;

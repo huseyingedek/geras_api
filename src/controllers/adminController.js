@@ -84,6 +84,8 @@ const createAccount = catchAsync(async (req, res, next) => {
     owner.password = undefined;
     
     return { account: newAccount, owner };
+  }, {
+    timeout: 30000,
   });
   
   res.status(201).json({
