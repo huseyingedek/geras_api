@@ -177,6 +177,8 @@ const createStaff = catchAsync(async (req, res, next) => {
     }
     
     return { newStaff, userId };
+  }, {
+    timeout: 30000,
   });
   
   const staffWithDetails = await prisma.staff.findUnique({
