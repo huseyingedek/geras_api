@@ -1,6 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '../lib/prisma.js';
 
 export const createQuickAppointment = async (req, res) => {
   try {
@@ -243,10 +241,12 @@ export const createQuickAppointment = async (req, res) => {
             }
           },
           sale: {
-            select: {
-              id: true,
-              totalAmount: true,
-              remainingSessions: true
+            include: {
+              payments: {
+                where: {
+                  status: 'COMPLETED'
+                }
+              }
             }
           }
         }
@@ -446,10 +446,12 @@ export const createAppointment = async (req, res) => {
           }
         },
         sale: {
-          select: {
-            id: true,
-            totalAmount: true,
-            remainingSessions: true
+          include: {
+            payments: {
+              where: {
+                status: 'COMPLETED'
+              }
+            }
           }
         }
       }
@@ -1485,6 +1487,200 @@ export const validateAppointmentTime = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Randevu doğrulaması yapılırken hata oluştu',
+      error: error.message
+    });
+  }
+};
+
+export const completeAppointment = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const { id } = req.params;
+    const { notes, completedAt } = req.body;
+
+    // Randevuyu bul
+    const appointment = await prisma.appointments.findFirst({
+      where: {
+        id: parseInt(id),
+        accountId: accountId
+      },
+      include: {
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            email: true
+          }
+        },
+        service: {
+          select: {
+            id: true,
+            serviceName: true,
+            price: true,
+            isSessionBased: true,
+            sessionCount: true,
+            durationMinutes: true
+          }
+        },
+        staff: {
+          select: {
+            id: true,
+            fullName: true,
+            role: true
+          }
+        },
+        sale: {
+          include: {
+            payments: {
+              where: {
+                status: 'COMPLETED'
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Randevu bulunamadı'
+      });
+    }
+
+    // Zaten tamamlanmış mı kontrol et
+    if (appointment.status === 'COMPLETED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Bu randevu zaten tamamlanmış'
+      });
+    }
+
+    // İptal edilmiş mi kontrol et
+    if (appointment.status === 'CANCELLED') {
+      return res.status(400).json({
+        success: false,
+        message: 'İptal edilmiş randevu tamamlanamaz'
+      });
+    }
+
+    let paymentWarning = null;
+    let sessionInfo = null;
+    let warnings = [];
+
+    // Ödeme kontrolü (sadece uyarı)
+    if (appointment.sale) {
+      const totalPaid = appointment.sale.payments.reduce((sum, payment) => sum + parseFloat(payment.amountPaid), 0);
+      const remainingPayment = parseFloat(appointment.sale.totalAmount) - totalPaid;
+      
+      if (remainingPayment > 0) {
+        paymentWarning = {
+          totalAmount: parseFloat(appointment.sale.totalAmount),
+          totalPaid: totalPaid,
+          remainingPayment: remainingPayment,
+          message: `${remainingPayment.toFixed(2)} TL ödeme kaldı`
+        };
+        warnings.push('Ödeme tamamlanmamış');
+      }
+    }
+
+    // Transaction ile randevu tamamla
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Randevu durumunu güncelle
+      const updatedAppointment = await tx.appointments.update({
+        where: {
+          id: parseInt(id)
+        },
+        data: {
+          status: 'COMPLETED',
+          notes: notes || appointment.notes,
+          updatedAt: new Date()
+        }
+      });
+
+      let updatedSale = null;
+      let createdSession = null;
+
+      // 2. Eğer satış varsa ve seanslı paketse seans düşür + session oluştur
+      if (appointment.sale && appointment.service.isSessionBased) {
+        if (appointment.sale.remainingSessions > 0) {
+          // Seans düşür
+          updatedSale = await tx.sales.update({
+            where: {
+              id: appointment.sale.id
+            },
+            data: {
+              remainingSessions: appointment.sale.remainingSessions - 1
+            }
+          });
+
+          // Session oluştur
+          createdSession = await tx.sessions.create({
+            data: {
+              saleId: appointment.sale.id,
+              staffId: appointment.staffId,
+              sessionDate: completedAt ? new Date(completedAt) : new Date(),
+              status: 'COMPLETED',
+              notes: notes || `${appointment.service.serviceName} tamamlandı`
+            }
+          });
+
+          sessionInfo = {
+            sessionCreated: true,
+            sessionId: createdSession.id,
+            remainingSessions: updatedSale.remainingSessions,
+            isPackageCompleted: updatedSale.remainingSessions === 0
+          };
+
+          if (updatedSale.remainingSessions === 0) {
+            warnings.push('Paket tamamlandı - tüm seanslar kullanıldı');
+          }
+        } else {
+          warnings.push('Bu satışta kalan seans bulunamadı');
+        }
+      }
+
+      return { updatedAppointment, updatedSale, createdSession };
+    });
+
+    // Final yanıt
+    const response = {
+      success: true,
+      message: 'Randevu başarıyla tamamlandı',
+      data: {
+        appointment: {
+          ...appointment,
+          status: 'COMPLETED',
+          notes: notes || appointment.notes,
+          completedAt: completedAt || new Date().toISOString()
+        }
+      }
+    };
+
+    // Ödeme uyarısı varsa ekle
+    if (paymentWarning) {
+      response.data.paymentWarning = paymentWarning;
+    }
+
+    // Seans bilgisi varsa ekle
+    if (sessionInfo) {
+      response.data.sessionInfo = sessionInfo;
+    }
+
+    // Uyarılar varsa ekle
+    if (warnings.length > 0) {
+      response.warnings = warnings;
+    }
+
+    res.status(200).json(response);
+
+  } catch (error) {
+    console.error('Randevu tamamlama hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Randevu tamamlanırken hata oluştu',
       error: error.message
     });
   }

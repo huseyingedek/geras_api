@@ -39,4 +39,8 @@ router.route('/:id')
   .put(checkPermission('appointments', 'update'), appointmentController.updateAppointment)
   .delete(checkPermission('appointments', 'delete'), appointmentController.deleteAppointment);
 
+// Randevu tamamlama özel endpoint'i
+router.route('/:id/complete')
+  .post(checkPermission('appointments', 'update'), appointmentController.completeAppointment);
+
 export default router; 
