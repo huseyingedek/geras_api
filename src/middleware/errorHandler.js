@@ -1,8 +1,26 @@
 import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
 
-
+// 🚀 Professional Prisma Error Handler
 const handlePrismaError = (err) => {
+  // Connection errors - DB_3001 type issues
+  if (err.code === 'P1001' || err.code === 'P1017' || err.message?.includes('timeout')) {
+    return new AppError(
+      'Veritabanı geçici olarak erişilemez. Lütfen birkaç saniye sonra tekrar deneyin.', 
+      503, 
+      'DB_3001'
+    );
+  }
+
+  // Pool exhaustion or connection issues
+  if (err.message?.includes('connection') || err.message?.includes('ECONNRESET') || err.message?.includes('ETIMEDOUT')) {
+    return new AppError(
+      'Veritabanı bağlantı sorunu. Lütfen tekrar deneyin.', 
+      503, 
+      'DB_CONNECTION_ERROR'
+    );
+  }
+
   if (err.code === 'P2025') {
     return new AppError('İstenen kayıt bulunamadı', 404, ErrorCodes.PRISMA_RECORD_NOT_FOUND);
   }
@@ -73,6 +91,7 @@ const handlePrismaError = (err) => {
   );
 };
 
+// 🚀 Professional Error Response - Development
 const sendErrorDev = (err, res) => {
   res.status(err.statusCode).json({
     status: err.status,
@@ -86,6 +105,7 @@ const sendErrorDev = (err, res) => {
   });
 };
 
+// 🚀 Professional Error Response - Production
 const sendErrorProd = (err, res) => {
   if (err.isOperational) {
     res.status(err.statusCode).json({
@@ -112,7 +132,7 @@ const sendErrorProd = (err, res) => {
   }
 };
 
-
+// 🚀 Professional Global Error Handler
 const globalErrorHandler = (err, req, res, next) => {
   err.statusCode = err.statusCode || 500;
   err.status = err.status || 'error';
@@ -121,10 +141,16 @@ const globalErrorHandler = (err, req, res, next) => {
   
   let error = { ...err, message: err.message };
   
-  if (err.name === 'PrismaClientKnownRequestError' || err.code?.startsWith('P')) {
+  // 🚀 Database error handling
+  if (err.name === 'PrismaClientKnownRequestError' || 
+      err.name === 'PrismaClientUnknownRequestError' ||
+      err.name === 'PrismaClientInitializationError' ||
+      err.name === 'PrismaClientRustPanicError' ||
+      err.code?.startsWith('P')) {
     error = handlePrismaError(err);
   }
   
+  // 🚀 JWT error handling
   if (err.name === 'JsonWebTokenError') {
     error = new AppError('Geçersiz token. Lütfen tekrar giriş yapın.', 401, ErrorCodes.GENERAL_UNAUTHORIZED);
   }
@@ -133,6 +159,7 @@ const globalErrorHandler = (err, req, res, next) => {
     error = new AppError('Token süresi doldu. Lütfen tekrar giriş yapın.', 401, ErrorCodes.GENERAL_UNAUTHORIZED);
   }
   
+  // 🚀 Not found handling
   if (err.statusCode === 404 && !err.isOperational) {
     error = new AppError(`${req.originalUrl} yolu bulunamadı`, 404, ErrorCodes.GENERAL_NOT_FOUND);
   }
