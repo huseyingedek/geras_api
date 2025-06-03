@@ -16,9 +16,25 @@ const app = express();
 
 // 🚀 Professional CORS configuration
 const corsOptions = {
-  origin: process.env.NODE_ENV === 'production' 
-    ? process.env.ALLOWED_ORIGINS?.split(',') || ['https://wisorsoft.xyz', 'http://wisorsoft.xyz', 'http://localhost:3000']
-    : ['https://wisorsoft.xyz', 'http://wisorsoft.xyz', 'http://localhost:3000', 'http://localhost:3001', 'http://localhost:8080', 'http://127.0.0.1:3000', 'http://127.0.0.1:5173', 'http://localhost:5173'],
+  origin: function (origin, callback) {
+    console.log('🔍 CORS Request Origin:', origin);
+    
+    const allowedOrigins = process.env.NODE_ENV === 'production' 
+      ? process.env.ALLOWED_ORIGINS?.split(',') || ['https://wisorsoft.xyz', 'http://wisorsoft.xyz', 'https://geras-api.onrender.com', 'http://geras-api.onrender.com', 'http://localhost:3000']
+      : ['https://wisorsoft.xyz', 'http://wisorsoft.xyz', 'https://geras-api.onrender.com', 'http://geras-api.onrender.com', 'http://localhost:3000', 'http://localhost:3001', 'http://localhost:8080', 'http://127.0.0.1:3000', 'http://127.0.0.1:5173', 'http://localhost:5173'];
+    
+    console.log('✅ Allowed Origins:', allowedOrigins);
+    console.log('🌍 NODE_ENV:', process.env.NODE_ENV || 'undefined');
+    
+    // Eğer origin undefined ise (Postman gibi) veya allowed origins listesinde varsa kabul et
+    if (!origin || allowedOrigins.includes(origin)) {
+      console.log('✅ Origin kabul edildi:', origin);
+      callback(null, true);
+    } else {
+      console.log('❌ Origin reddedildi:', origin);
+      callback(new Error('CORS tarafından reddedildi'), false);
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
   credentials: true,
