@@ -23,7 +23,25 @@ app.use((req, res, next) => {
 
 // TEST: CORS'u tamamen kapat
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://wisorsoft.xyz');
+  const allowedOrigins = [
+    'https://wisorsoft.xyz',
+    'https://www.wisorsoft.xyz', // www'li versiyon eklendi
+    'http://wisorsoft.xyz',
+    'http://www.wisorsoft.xyz',
+    'https://geras-client-rose.vercel.app' // Vercel domain'i eklendi
+  ];
+  
+  const origin = req.headers.origin;
+  console.log('🔍 Request Origin:', origin);
+  console.log('✅ Allowed Origins:', allowedOrigins);
+  
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    console.log('✅ Origin kabul edildi:', origin);
+  } else {
+    console.log('❌ Origin reddedildi:', origin);
+  }
+  
   res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
   res.header('Access-Control-Allow-Credentials', 'true');
