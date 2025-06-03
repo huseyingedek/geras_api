@@ -1,22 +1,46 @@
 {
-  "name": "go",
+  "name": "geras-api",
   "version": "1.0.0",
-  "description": "Express ve Prisma kullanılan Node.js API projesi",
+  "description": "Professional Salon Management System API - Modern salon ve güzellik merkezleri için geliştirilmiş yönetim sistemi",
   "main": "src/server.js",
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:studio": "prisma studio",
+    "health": "curl http://localhost:5000/health",
+    "logs": "pm2 logs geras-api",
+    "monitor": "pm2 monit"
   },
   "keywords": [
     "express",
     "prisma",
     "mysql",
-    "node"
+    "node",
+    "salon",
+    "appointment",
+    "management",
+    "api",
+    "rest",
+    "professional"
   ],
-  "author": "",
+  "author": {
+    "name": "Hüseyin Gedek",
+    "email": "huseyinxgedek@gmail.com",
+    "url": "https://github.com/huseyingedek"
+  },
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/huseyingedek/geras_api.git"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "dependencies": {
     "@prisma/client": "^6.8.2",
     "bcryptjs": "^2.4.3",

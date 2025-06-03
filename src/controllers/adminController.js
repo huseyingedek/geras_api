@@ -1,10 +1,9 @@
-import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
+import { assignResourcePermissionsToStaff } from '../utils/permissionUtils.js';
+import prisma from '../lib/prisma.js'; // Merkezi instance kullan
 import { addBasicPermissionsToAccount } from '../utils/permissionUtils.js';
-
-const prisma = new PrismaClient();
 
 const catchAsync = fn => {
   return (req, res, next) => {

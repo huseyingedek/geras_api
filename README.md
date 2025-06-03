@@ -1,82 +1,251 @@
-# Node.js Express ve Prisma API
+# 🚀 Geras API - Professional Salon Management System
 
-Bu proje, Node.js, Express, PostgreSQL ve Prisma ORM kullanarak oluşturulmuş bir RESTful API uygulamasıdır.
+Modern salon ve güzellik merkezleri için geliştirilmiş profesyonel yönetim sistemi API'si.
 
-## Özellikler
+## ✨ Özellikler
 
-- Express web sunucusu
-- PostgreSQL veritabanı
-- Prisma ORM
-- RESTful API yapısı
-- Kullanıcı CRUD işlemleri
+- **Müşteri Yönetimi**: Kapsamlı müşteri profilleri ve geçmiş takibi
+- **Randevu Sistemi**: Gelişmiş randevu planlama ve çakışma kontrolü  
+- **Personel Yönetimi**: Rol tabanlı yetkilendirme ve çalışma saatleri
+- **Hizmet Yönetimi**: Seans tabanlı ve tek seferlik hizmet desteği
+- **Satış & Ödeme**: Detaylı satış takibi ve ödeme yönetimi
+- **Dashboard & Raporlama**: Gerçek zamanlı istatistikler
 
-## Kurulum
+## 🏗️ Teknik Mimari
 
-1. Repoyu klonlayın:
-```
-git clone <repo-url>
-cd <proje-klasörü>
-```
+- **Framework**: Express.js + Node.js
+- **Database**: MySQL + Prisma ORM
+- **Authentication**: JWT + bcrypt
+- **Security**: Helmet, CORS, Rate Limiting
+- **Monitoring**: Health checks, Error tracking
 
-2. Bağımlılıkları yükleyin:
-```
+## 🚀 Quick Start
+
+### 1. Kurulum
+```bash
+git clone https://github.com/huseyingedek/geras_api.git
+cd geras_api
 npm install
 ```
 
-3. `.env` dosyasını oluşturun (örnek `.env.example` dosyasını kopyalayabilirsiniz):
-```
-DATABASE_URL="postgresql://postgres:password@localhost:5432/mydatabase?schema=public"
-PORT=3000
-NODE_ENV=development
-```
-
-4. PostgreSQL veritabanınızı oluşturun ve bağlantı URL'sini `.env` dosyasında güncelleyin.
-
-5. Prisma şemasını veritabanına aktarın:
-```
-npx prisma migrate dev --name init
+### 2. Environment Configuration
+```bash
+# .env dosyasını oluşturun
+NODE_ENV=production
+PORT=5000
+DATABASE_URL="mysql://user:pass@host:port/db"
+JWT_SECRET=your-super-secret-jwt-key-min-32-chars
+ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 ```
 
-6. Prisma istemcisini oluşturun:
-```
+### 3. Database Setup
+```bash
 npx prisma generate
+npx prisma db push
 ```
 
-## Çalıştırma
+### 4. Start Application
+```bash
+# Production
+npm start
 
-Geliştirme modunda çalıştırmak için:
-```
+# Development
 npm run dev
 ```
 
-Üretim modunda çalıştırmak için:
+## 📋 API Documentation
+
+### Authentication
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "password"
+}
 ```
-npm start
+
+### Health Check
+```http
+GET /health
 ```
 
-## API Endpoint'leri
+Response:
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-01-01T00:00:00.000Z",
+  "uptime": "5 minutes, 30 seconds",
+  "memory": {
+    "used": "45 MB",
+    "total": "128 MB"
+  },
+  "database": {
+    "status": "healthy"
+  },
+  "environment": "production"
+}
+```
 
-### Kullanıcılar
+## 🔧 Configuration
 
-- `GET /api/users`: Tüm kullanıcıları listeler
-- `GET /api/users/:id`: Belirli bir kullanıcıyı getirir
-- `POST /api/users`: Yeni bir kullanıcı oluşturur
-- `PUT /api/users/:id`: Bir kullanıcıyı günceller
-- `DELETE /api/users/:id`: Bir kullanıcıyı siler
+### Environment Variables
 
-## Veritabanı Modelleri
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `NODE_ENV` | Yes | development | Application environment |
+| `PORT` | No | 5000 | Server port |
+| `DATABASE_URL` | Yes | - | MySQL connection string |
+| `JWT_SECRET` | Yes | - | JWT signing secret (min 32 chars) |
+| `ALLOWED_ORIGINS` | No | * | CORS allowed origins (comma-separated) |
 
-### User
-- `id`: Int (primary key, auto-increment)
-- `email`: String (unique)
-- `name`: String (optional)
-- `createdAt`: DateTime
-- `updatedAt`: DateTime
+### Database Connection Pool
 
-### Post
-- `id`: Int (primary key, auto-increment)
-- `title`: String
-- `content`: String (optional)
-- `published`: Boolean (default: false)
-- `createdAt`: DateTime
-- `updatedAt`: DateTime 
+Production ortamında optimize edilmiş connection pool ayarları:
+- **Connection Limit**: 5
+- **Pool Timeout**: 20 seconds
+- **Connect Timeout**: 30 seconds
+- **Transaction Timeout**: 15 seconds
+
+## 🛡️ Security Features
+
+- **CORS**: Environment-based origin control
+- **Helmet**: Security headers
+- **Rate Limiting**: API abuse protection
+- **Data Sanitization**: XSS and injection prevention
+- **JWT Authentication**: Secure token-based auth
+- **Password Hashing**: bcrypt with salt rounds
+
+## 📊 Monitoring & Health
+
+### Health Check Endpoint
+- **URL**: `/health`
+- **Method**: GET
+- **Response**: System status, memory usage, database health
+
+### Error Handling
+- Comprehensive error categorization
+- Prisma-specific error handling
+- Production-safe error responses
+- Structured error logging
+
+## 🚀 Deployment
+
+### Render Deployment
+```bash
+# Render otomatik deployment için
+git push origin main
+```
+
+### Environment Setup
+```bash
+# Production environment variables
+NODE_ENV=production
+DATABASE_URL=mysql://user:pass@host:port/db?connection_limit=5&pool_timeout=20
+JWT_SECRET=production-jwt-secret-min-32-characters
+ALLOWED_ORIGINS=https://yourdomain.com,https://api.yourdomain.com
+```
+
+### Database Migration
+```bash
+# Production'da database schema update
+npx prisma db push
+```
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+#### 1. CORS Errors
+```
+❌ CORS policy violation: Origin not allowed
+```
+**Çözüm**: `ALLOWED_ORIGINS` environment variable'ında domain'inizi kontrol edin.
+
+#### 2. Database Connection Issues  
+```
+❌ Database connection failed: ERROR 42000 (1203)
+```
+**Çözüm**: Connection pool limitleri kontrol edin, fazla client instance'ları kapatın.
+
+#### 3. JWT Token Errors
+```
+❌ JsonWebTokenError: invalid token
+```
+**Çözüm**: Frontend'de token format ve Bearer prefix kontrol edin.
+
+### Debug Mode
+Development ortamında detaylı logging:
+```bash
+NODE_ENV=development npm run dev
+```
+
+### Performance Monitoring
+- Memory usage: `/health` endpoint
+- Database performance: Prisma query logs
+- Request tracking: Morgan middleware
+
+## 📈 Performance Optimization
+
+### Database
+- ✅ Connection pooling (max 5 connections)
+- ✅ Transaction timeouts
+- ✅ Query optimization
+- ✅ Index usage
+
+### Application
+- ✅ Gzip compression
+- ✅ Request size limits
+- ✅ Caching headers
+- ✅ Graceful shutdowns
+
+### Security
+- ✅ Helmet security headers
+- ✅ CORS configuration
+- ✅ Rate limiting
+- ✅ Input validation
+
+## 🤝 API Response Format
+
+### Success Response
+```json
+{
+  "status": "success",
+  "data": { ... },
+  "message": "Operation completed successfully"
+}
+```
+
+### Error Response
+```json
+{
+  "status": "error", 
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Validation failed",
+    "data": { "field": "email" }
+  },
+  "timestamp": "2024-01-01T00:00:00.000Z"
+}
+```
+
+## 📞 Support
+
+- **Repository**: [GitHub](https://github.com/huseyingedek/geras_api)
+- **Issues**: GitHub Issues
+- **Documentation**: API docs
+
+## 🔄 Version History
+
+### v1.0.0 (Current)
+- ✅ Professional connection pool management
+- ✅ Enhanced CORS configuration  
+- ✅ Comprehensive error handling
+- ✅ Health monitoring
+- ✅ Security hardening
+- ✅ Performance optimization
+
+---
+
+**📝 Not**: Bu API profesyonel production kullanımı için optimize edilmiştir. Development ve production ortamları için farklı konfigürasyonlar mevcuttur. 

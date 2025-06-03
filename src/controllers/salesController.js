@@ -1,6 +1,5 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '../lib/prisma.js'; // Merkezi instance kullan
+import AppError from '../utils/AppError.js';
 
 const calculatePrice = (service, quantity) => {
   const calculatedPrice = service.price * quantity;

@@ -1,82 +1,142 @@
 import dotenv from 'dotenv';
 import app from './app.js';
-import prisma from './lib/prisma.js';
+import prisma, { checkDatabaseConnection } from './lib/prisma.js';
 
+// Environment variables yükle
 dotenv.config();
 
 const PORT = process.env.PORT || 5000;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
-async function main() {
+/**
+ * 🚀 Professional Server Startup
+ */
+async function startServer() {
   try {
-    // 🚀 Professional connection handling
-    console.log('🔌 Veritabanına bağlanılıyor...');
-    
-    await Promise.race([
-      prisma.$connect(),
+    // 1. Database connection test
+    console.log('🔌 Veritabanı bağlantısı test ediliyor...');
+    const dbHealth = await Promise.race([
+      checkDatabaseConnection(),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Database connection timeout')), 15000)
+        setTimeout(() => reject(new Error('Database health check timeout')), 10000)
       )
     ]);
+
+    if (dbHealth.status !== 'healthy') {
+      throw new Error(`Database connection failed: ${dbHealth.error}`);
+    }
     
-    console.log('✅ Veritabanına başarıyla bağlandı');
+    console.log('✅ Veritabanı bağlantısı başarılı');
     
-    // Server başlat
+    // 2. Start HTTP Server
     const server = app.listen(PORT, () => {
       console.log(`🚀 Server ${PORT} portunda çalışıyor`);
-      console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`📝 Environment: ${NODE_ENV}`);
+      console.log(`🌐 Health Check: http://localhost:${PORT}/health`);
+      console.log(`📡 API Base URL: http://localhost:${PORT}/api`);
+      
+      if (NODE_ENV === 'development') {
+        console.log('🔧 Development mode - Extra logging enabled');
+      }
     });
 
-    // Graceful shutdown için server referansını sakla
+    // Global server reference için
     process.server = server;
     
+    // Keep-alive timeout (for cloud platforms)
+    server.keepAliveTimeout = 61 * 1000; // 61 seconds
+    server.headersTimeout = 65 * 1000; // 65 seconds
+    
+    return server;
+    
   } catch (error) {
-    console.error('❌ Sunucu başlatılamadı:', error.message);
-    await prisma.$disconnect();
+    console.error('❌ Server başlatılamadı:', error.message);
+    console.error('🔍 Error details:', error);
+    
+    // Cleanup ve exit
+    try {
+      await prisma.$disconnect();
+    } catch (disconnectError) {
+      console.error('❌ Prisma disconnect error:', disconnectError);
+    }
+    
     process.exit(1);
   }
 }
 
-main().catch(async (error) => {
-  console.error('❌ Ana fonksiyon hatası:', error);
-  await prisma.$disconnect();
-  process.exit(1);
-});
-
-// 🚀 Professional graceful shutdown
+/**
+ * 🚀 Professional Graceful Shutdown
+ */
 const gracefulShutdown = async (signal) => {
   console.log(`\n📡 ${signal} sinyali alındı, güvenli kapatma başlatılıyor...`);
   
+  const shutdownTimeout = setTimeout(() => {
+    console.error('❌ Graceful shutdown timeout - forcing exit');
+    process.exit(1);
+  }, 15000); // 15 saniye timeout
+  
   try {
-    // Server'ı durdur
+    // 1. HTTP Server'ı durdur
     if (process.server) {
-      process.server.close(() => {
-        console.log('🔌 HTTP server kapatıldı');
+      await new Promise((resolve, reject) => {
+        process.server.close((error) => {
+          if (error) {
+            console.error('❌ HTTP server close error:', error);
+            reject(error);
+          } else {
+            console.log('🔌 HTTP server kapatıldı');
+            resolve();
+          }
+        });
       });
     }
     
-    // Database bağlantısını kapat
+    // 2. Aktif bağlantıları bekle
+    console.log('⏳ Aktif bağlantılar sonlandırılıyor...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // 3. Database bağlantısını kapat
     await prisma.$disconnect();
     console.log('💾 Veritabanı bağlantısı kapatıldı');
     
+    clearTimeout(shutdownTimeout);
     console.log('✅ Güvenli kapatma tamamlandı');
     process.exit(0);
     
   } catch (error) {
+    clearTimeout(shutdownTimeout);
     console.error('❌ Kapatma sırasında hata:', error);
+    
+    // Force disconnect
+    try {
+      await prisma.$disconnect();
+    } catch (disconnectError) {
+      console.error('❌ Force disconnect error:', disconnectError);
+    }
+    
     process.exit(1);
   }
 };
 
+// 🚀 Signal handlers
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
-// Uncaught exception handling
+// 🚀 Unhandled exception handlers
 process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught Exception:', error);
+  console.error('💥 Stack:', error.stack);
   gracefulShutdown('UNCAUGHT_EXCEPTION');
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  console.error('❌ Unhandled Rejection at:', promise);
+  console.error('💥 Reason:', reason);
   gracefulShutdown('UNHANDLED_REJECTION');
+});
+
+// 🚀 Start the server
+startServer().catch((error) => {
+  console.error('❌ Server startup failed:', error);
+  process.exit(1);
 }); 

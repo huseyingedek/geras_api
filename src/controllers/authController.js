@@ -1,11 +1,9 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { promisify } from 'util';
-import { PrismaClient } from '@prisma/client';
 import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
-
-const prisma = new PrismaClient();
+import prisma from '../lib/prisma.js';
 
 const signToken = (id) => {
   return jwt.sign(

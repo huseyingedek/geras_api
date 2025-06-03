@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma.js';
 import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
-
-const prisma = new PrismaClient();
 
 /**
  * Belirli bir kaynak için belirli bir izni kontrol eder

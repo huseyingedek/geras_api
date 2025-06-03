@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
-
-const prisma = new PrismaClient();
+import prisma from '../lib/prisma.js'; // Merkezi instance kullan
 
 const catchAsync = fn => {
   return (req, res, next) => {
