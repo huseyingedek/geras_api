@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import app from './app.js';
-import prisma from './lib/prisma.js'; // 🚀 Singleton Prisma instance kullan
+import prisma from './lib/prisma.js';
 
 dotenv.config();
 
