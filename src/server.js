@@ -21,7 +21,7 @@ async function startServer() {
     const dbHealth = await Promise.race([
       checkDatabaseConnection(),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Database health check timeout')), 10000)
+        setTimeout(() => reject(new Error('Database health check timeout')), 30000)
       )
     ]);
 
