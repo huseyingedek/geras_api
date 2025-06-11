@@ -23,8 +23,14 @@ export const createQuickAppointment = async (req, res) => {
       });
     }
 
+    // 🇹🇷 Türkiye saati için tarih düzeltmesi
     const appointmentStart = new Date(appointmentDate);
     const now = new Date();
+    
+    // Konsol logları ile debug yapalım
+    console.log('🕐 Gelen appointmentDate:', appointmentDate);
+    console.log('🕐 Çevrilen appointmentStart:', appointmentStart.toISOString());
+    console.log('🕐 Türkiye saati:', appointmentStart.toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' }));
     
     if (appointmentStart <= now) {
       return res.status(400).json({
@@ -210,7 +216,7 @@ export const createQuickAppointment = async (req, res) => {
           serviceId: serviceId,
           staffId: staffId,
           saleId: sale.id,
-          appointmentDate: new Date(appointmentDate),
+          appointmentDate: new Date(appointmentDate).toISOString(),
           notes: notes || null
         },
         include: {
@@ -327,6 +333,12 @@ export const createAppointment = async (req, res) => {
 
     // ✅ ÇAKIŞMA VE ÇALIŞMA SAATİ KONTROLÜ
     const appointmentStart = new Date(appointmentDate);
+    
+    // 🇹🇷 Debug logları
+    console.log('📅 createAppointment - Gelen appointmentDate:', appointmentDate);
+    console.log('📅 createAppointment - Çevrilen appointmentStart:', appointmentStart.toISOString());
+    console.log('📅 createAppointment - Türkiye saati:', appointmentStart.toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' }));
+    
     const serviceDuration = sale.service.durationMinutes || 60;
     const appointmentEnd = new Date(appointmentStart.getTime() + (serviceDuration * 60000));
     const dayOfWeek = appointmentStart.getDay();
@@ -415,7 +427,7 @@ export const createAppointment = async (req, res) => {
         serviceId: sale.serviceId,
         staffId: staffId,
         saleId: saleId,
-        appointmentDate: new Date(appointmentDate),
+        appointmentDate: new Date(appointmentDate).toISOString(),
         notes: notes || null
       },
       include: {
@@ -496,10 +508,10 @@ export const getAllAppointments = async (req, res) => {
     if (startDate || endDate) {
       whereClause.appointmentDate = {};
       if (startDate) {
-        whereClause.appointmentDate.gte = new Date(startDate);
+        whereClause.appointmentDate.gte = new Date(startDate).toISOString();
       }
       if (endDate) {
-        whereClause.appointmentDate.lte = new Date(endDate);
+        whereClause.appointmentDate.lte = new Date(endDate).toISOString();
       }
     }
 
@@ -614,7 +626,7 @@ export const updateAppointment = async (req, res) => {
       },
       data: {
         staffId: staffId || existingAppointment.staffId,
-        appointmentDate: appointmentDate ? new Date(appointmentDate) : existingAppointment.appointmentDate,
+        appointmentDate: appointmentDate ? new Date(appointmentDate).toISOString() : existingAppointment.appointmentDate,
         status: status || existingAppointment.status,
         notes: notes !== undefined ? notes : existingAppointment.notes
       },

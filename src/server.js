@@ -5,6 +5,9 @@ import prisma, { checkDatabaseConnection } from './lib/prisma.js';
 // Environment variables yükle
 dotenv.config();
 
+// 🇹🇷 TIMEZONE AYARI - Türkiye saati için
+process.env.TZ = 'Europe/Istanbul';
+
 const PORT = process.env.PORT || 5000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
