@@ -169,6 +169,11 @@ const createStaff = catchAsync(async (req, res, next) => {
             console.log(`${resource} için personele izinler atandı`);
           } catch (error) {
             console.error(`${resource} için izin atama hatası:`, error);
+            // Permission validation hatası ise işlemi durdur
+            if (error.message.includes('görüntüleme izni olmadan')) {
+              throw new AppError(error.message, 400, ErrorCodes.GENERAL_VALIDATION_ERROR);
+            }
+            throw error;
           }
         }
       }
@@ -482,13 +487,22 @@ const updateStaff = catchAsync(async (req, res, next) => {
       if (permissions && typeof permissions === 'object') {
         for (const resource in permissions) {
           if (permissions.hasOwnProperty(resource)) {
-            await assignResourcePermissionsToStaff(
-              parseInt(id), 
-              accountId, 
-              resource, 
-              permissions[resource],
-              tx
-            );
+            try {
+              await assignResourcePermissionsToStaff(
+                parseInt(id), 
+                accountId, 
+                resource, 
+                permissions[resource],
+                tx
+              );
+            } catch (error) {
+              console.error(`${resource} için izin güncelleme hatası:`, error);
+              // Permission validation hatası ise işlemi durdur
+              if (error.message.includes('görüntüleme izni olmadan')) {
+                throw new AppError(error.message, 400, ErrorCodes.GENERAL_VALIDATION_ERROR);
+              }
+              throw error;
+            }
           }
         }
       }
@@ -638,12 +652,20 @@ const updateStaffPermissions = catchAsync(async (req, res, next) => {
   try {
     for (const resource in permissions) {
       if (permissions.hasOwnProperty(resource)) {
-        await assignResourcePermissionsToStaff(
-          parseInt(id), 
-          accountId, 
-          resource, 
-          permissions[resource]
-        );
+        try {
+          await assignResourcePermissionsToStaff(
+            parseInt(id), 
+            accountId, 
+            resource, 
+            permissions[resource]
+          );
+        } catch (error) {
+          // Permission validation hatası ise özel mesaj döndür
+          if (error.message.includes('görüntüleme izni olmadan')) {
+            return next(new AppError(error.message, 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+          }
+          throw error;
+        }
       }
     }
     

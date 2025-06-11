@@ -133,8 +133,70 @@ const getMe = async (req, res, next) => {
   }
 };
 
+const changePassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user.id;
+
+    // Validasyon kontrolü
+    if (!currentPassword || !newPassword) {
+      return next(new AppError('Mevcut şifre ve yeni şifre gereklidir', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+
+    // Yeni şifre güçlü mü kontrol et
+    if (newPassword.length < 6) {
+      return next(new AppError('Yeni şifre en az 6 karakter olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+
+    // Kullanıcıyı ve mevcut şifresini getir
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        password: true
+      }
+    });
+
+    if (!user) {
+      return next(new AppError('Kullanıcı bulunamadı', 404, ErrorCodes.USER_NOT_FOUND));
+    }
+
+    // Mevcut şifreyi doğrula
+    const isCurrentPasswordCorrect = await bcrypt.compare(currentPassword, user.password);
+    if (!isCurrentPasswordCorrect) {
+      return next(new AppError('Mevcut şifre hatalı', 400, ErrorCodes.USER_AUTHENTICATION_FAILED));
+    }
+
+    // Yeni şifre eskisiyle aynı mı kontrol et
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+    if (isSamePassword) {
+      return next(new AppError('Yeni şifre mevcut şifrenizle aynı olamaz', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+
+    // Yeni şifreyi hash'le
+    const hashedNewPassword = await bcrypt.hash(newPassword, 12);
+
+    // Şifreyi güncelle
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedNewPassword }
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Şifreniz başarıyla değiştirildi'
+    });
+
+  } catch (error) {
+    console.error('Şifre değiştirme hatası:', error);
+    next(new AppError('Şifre değiştirilirken bir hata oluştu', 500, ErrorCodes.GENERAL_SERVER_ERROR));
+  }
+};
+
 export {
   createAdmin,
   login,
-  getMe
+  getMe,
+  changePassword
 }; 

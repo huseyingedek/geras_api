@@ -21,6 +21,20 @@ const createClient = catchAsync(async (req, res, next) => {
     return next(new AppError('Ad ve soyad bilgileri zorunludur', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
   }
 
+  // Telefon numarası validation
+  if (phone && phone !== null) {
+    const phoneRegex = /^[0-9\s\-\+\(\)]+$/;
+    const cleanPhone = phone.replace(/\s/g, '');
+    
+    if (!phoneRegex.test(phone)) {
+      return next(new AppError('Telefon numarası sadece rakam, boşluk, tire, artı ve parantez içerebilir', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+    
+    if (cleanPhone.length < 10 || cleanPhone.length > 15) {
+      return next(new AppError('Telefon numarası 10-15 rakam arasında olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+  }
+
   if (email) {
     const existingClientWithEmail = await prisma.clients.findFirst({
       where: {
@@ -196,6 +210,20 @@ const updateClient = catchAsync(async (req, res, next) => {
   
   if (!client) {
     return next(new AppError('Müşteri bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+  }
+
+  // Telefon numarası validation (eğer güncelleme yapılıyorsa)
+  if (phone && phone !== null) {
+    const phoneRegex = /^[0-9\s\-\+\(\)]+$/;
+    const cleanPhone = phone.replace(/\s/g, '');
+    
+    if (!phoneRegex.test(phone)) {
+      return next(new AppError('Telefon numarası sadece rakam, boşluk, tire, artı ve parantez içerebilir', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+    
+    if (cleanPhone.length < 10 || cleanPhone.length > 15) {
+      return next(new AppError('Telefon numarası 10-15 rakam arasında olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
   }
   
   if (email && email !== client.email) {

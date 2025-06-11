@@ -93,6 +93,14 @@ const addBasicPermissionsToAccount = async (accountId, tx = prisma) => {
  * @param {PrismaClient} [tx]
  */
 const assignResourcePermissionsToStaff = async (staffId, accountId, resource, abilities, tx = prisma) => {
+  // 🛡️ PERMISSION VALIDATION: Görüntüleme izni olmadan diğer izinler verilemez
+  const hasViewPermission = abilities.canView || false;
+  const hasOtherPermissions = abilities.canCreate || abilities.canEdit || abilities.canDelete;
+  
+  if (!hasViewPermission && hasOtherPermissions) {
+    throw new Error(`${resource} kaynağı için görüntüleme izni olmadan diğer işlemleri yapamazsınız. Önce görüntüleme iznini verin.`);
+  }
+
   const permissions = await tx.permission.findMany({
     where: {
       accountId,
