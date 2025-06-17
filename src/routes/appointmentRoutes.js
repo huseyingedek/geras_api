@@ -22,7 +22,7 @@ router.route('/weekly')
   .get(checkPermission('appointments', 'view'), appointmentController.getWeeklyAppointments);
 
 // Personel müsaitlik kontrolü
-router.route('/staff-availability')
+router.route('/check-availability')
   .get(checkPermission('appointments', 'view'), appointmentController.checkStaffAvailability);
 
 // Randevu saati doğrulama

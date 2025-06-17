@@ -726,6 +726,16 @@ export const getAppointmentById = async (req, res) => {
     const { accountId } = req.user;
     const { id } = req.params;
 
+    if (!id || isNaN(parseInt(id))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Geçersiz randevu ID'
+      });
+    }
+
+    console.log('getAppointmentById - Gelen ID:', id);
+    console.log('getAppointmentById - AccountID:', accountId);
+
     const appointment = await prisma.appointments.findFirst({
       where: {
         id: parseInt(id),
@@ -1157,6 +1167,26 @@ export const checkStaffAvailability = async (req, res) => {
 
     const targetDate = new Date(date);
     const dayOfWeek = targetDate.getDay();
+    const now = new Date();
+    const isToday = targetDate.toDateString() === now.toDateString();
+    
+    // Geçmiş tarih kontrolü
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const targetDateStart = new Date(targetDate);
+    targetDateStart.setHours(0, 0, 0, 0);
+    
+    if (targetDateStart < todayStart) {
+      return res.status(400).json({
+        success: false,
+        message: 'Geçmiş tarihe randevu alınamaz',
+        data: {
+          isWorking: false,
+          availableSlots: [],
+          message: 'Geçmiş tarihe randevu alınamaz'
+        }
+      });
+    }
 
     const workingHour = staff.workingHours.find(wh => wh.dayOfWeek === dayOfWeek && wh.isWorking);
 
@@ -1243,6 +1273,12 @@ export const checkStaffAvailability = async (req, res) => {
       const slotEnd = new Date(currentTime.getTime() + (serviceDuration * 60000));
       
       if (slotEnd <= workEndTime) {
+        // Geçmiş saat kontrolü - bugün ise şu anki saatten önce olan slotları atla
+        if (isToday && currentTime <= now) {
+          currentTime = new Date(currentTime.getTime() + (slotInterval * 60000));
+          continue;
+        }
+
         let isAvailable = true;
         
         for (const busySlot of busySlots) {
