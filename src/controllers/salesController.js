@@ -1,4 +1,4 @@
-import prisma from '../lib/prisma.js'; // Merkezi instance kullan
+import prisma from '../lib/prisma.js';
 import AppError from '../utils/AppError.js';
 
 const calculatePrice = (service, quantity) => {
@@ -21,13 +21,9 @@ export const getAllSales = async (req, res) => {
     if (isDeleted === 'true') {
       whereClause.isDeleted = true;
     } else if (isDeleted === 'all') {
-      // Do nothing, show all
     } else {
       whereClause.isDeleted = false;
     }
-
-    // ✅ Tüm satışları göster - seans filtresi kaldırıldı
-    // Artık seans sayısı 0 olan satışlar da görünecek
 
     const sales = await prisma.sales.findMany({
       where: whereClause,
@@ -108,7 +104,8 @@ export const createSale = async (req, res) => {
       serviceId, 
       requestedSessions,
       totalAmount,
-      notes 
+      notes,
+      saleDate
     } = req.body;
 
     const account = await prisma.accounts.findUnique({
@@ -149,6 +146,15 @@ export const createSale = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Müşteri bulunamadı'
+      });
+    }
+
+    const finalSaleDate = saleDate ? new Date(saleDate) : new Date();
+    
+    if (finalSaleDate > new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Satış tarihi gelecek bir tarih olamaz'
       });
     }
 
@@ -210,6 +216,7 @@ export const createSale = async (req, res) => {
         accountId: accountId,
         clientId: clientId,
         serviceId: serviceId,
+        saleDate: finalSaleDate,
         totalAmount: finalTotalAmount,
         remainingSessions: finalSessions
       },

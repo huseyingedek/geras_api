@@ -13,7 +13,8 @@ export const createQuickAppointment = async (req, res) => {
       remainingSessions,
       staffId,
       appointmentDate,
-      notes
+      notes,
+      saleDate
     } = req.body;
 
     if (!firstName || !lastName || !serviceId || !staffId || !appointmentDate) {
@@ -23,14 +24,9 @@ export const createQuickAppointment = async (req, res) => {
       });
     }
 
-    // 🇹🇷 Türkiye saati için tarih düzeltmesi
     const appointmentStart = new Date(appointmentDate);
     const now = new Date();
-    
-    // Konsol logları ile debug yapalım
-    console.log('🕐 Gelen appointmentDate:', appointmentDate);
-    console.log('🕐 Çevrilen appointmentStart:', appointmentStart.toISOString());
-    console.log('🕐 Türkiye saati:', appointmentStart.toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' }));
+
     
     if (appointmentStart <= now) {
       return res.status(400).json({
@@ -198,11 +194,18 @@ export const createQuickAppointment = async (req, res) => {
       const finalTotalAmount = totalAmount || parseFloat(service.price);
       const finalSessions = remainingSessions || (service.isSessionBased ? service.sessionCount : 1);
 
+      const finalSaleDate = saleDate ? new Date(saleDate) : new Date(appointmentDate);
+      
+      if (finalSaleDate > new Date()) {
+        throw new Error('Satış tarihi gelecek bir tarih olamaz');
+      }
+
       const sale = await tx.sales.create({
         data: {
           accountId: accountId,
           clientId: client.id,
           serviceId: serviceId,
+          saleDate: finalSaleDate,  // ✅ Satış tarihi eklendi
           totalAmount: finalTotalAmount,
           remainingSessions: finalSessions
         }
@@ -1906,17 +1909,14 @@ export const completeAppointment = async (req, res) => {
       }
     };
 
-    // Ödeme uyarısı varsa ekle
     if (paymentWarning) {
       response.data.paymentWarning = paymentWarning;
     }
 
-    // Seans bilgisi varsa ekle
     if (sessionInfo) {
       response.data.sessionInfo = sessionInfo;
     }
 
-    // Uyarılar varsa ekle
     if (warnings.length > 0) {
       response.warnings = warnings;
     }
