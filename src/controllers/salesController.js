@@ -21,9 +21,13 @@ export const getAllSales = async (req, res) => {
     if (isDeleted === 'true') {
       whereClause.isDeleted = true;
     } else if (isDeleted === 'all') {
+      // Do nothing, show all
     } else {
       whereClause.isDeleted = false;
     }
+
+    // ✅ Tüm satışları göster - seans filtresi kaldırıldı
+    // Artık seans sayısı 0 olan satışlar da görünecek
 
     const sales = await prisma.sales.findMany({
       where: whereClause,
