@@ -303,59 +303,44 @@ const deleteService = catchAsync(async (req, res, next) => {
     return next(new AppError('Hizmet bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
   }
   
+  // Hizmet zaten pasifse
+  if (!service.isActive) {
+    return next(new AppError('Hizmet zaten pasif durumda', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+  
   try {
-    // Transaction ile cascade silme işlemi
-    await prisma.$transaction(async (tx) => {
-      // 1. Hizmete bağlı satışları bul
-      const relatedSales = await tx.sales.findMany({
-        where: { serviceId: parseInt(id) },
-        select: { id: true }
-      });
-      
-      if (relatedSales.length > 0) {
-        const saleIds = relatedSales.map(sale => sale.id);
-        
-        // 2. Satışlara bağlı ödemeleri sil
-        await tx.payments.deleteMany({
-          where: { saleId: { in: saleIds } }
-        });
-        
-        // 3. Satışlara bağlı seansları sil
-        await tx.sessions.deleteMany({
-          where: { saleId: { in: saleIds } }
-        });
-        
-        // 4. Satışlara bağlı randevuları güncelle (saleId'yi null yap)
-        await tx.appointments.updateMany({
-          where: { saleId: { in: saleIds } },
-          data: { saleId: null }
-        });
-        
-        // 5. Satışları sil
-        await tx.sales.deleteMany({
-          where: { serviceId: parseInt(id) }
-        });
+    // Soft delete: Hizmeti sadece pasif hale getir
+    const updatedService = await prisma.services.update({
+      where: { id: parseInt(id) },
+      data: { 
+        isActive: false,
+        updatedAt: new Date()
       }
-      
-      // 6. Hizmete doğrudan bağlı randevuları sil
-      await tx.appointments.deleteMany({
-        where: { serviceId: parseInt(id) }
-      });
-      
-      // 7. Son olarak hizmeti sil
-      await tx.services.delete({
-        where: { id: parseInt(id) }
-      });
+    });
+    
+    // İlişkili verilerin durumunu kontrol et
+    const relatedData = await prisma.sales.count({
+      where: { serviceId: parseInt(id) }
+    });
+    
+    const relatedAppointments = await prisma.appointments.count({
+      where: { serviceId: parseInt(id) }
     });
     
     res.json({
       status: 'success',
-      message: 'Hizmet ve bağlı tüm kayıtlar başarıyla silindi'
+      data: updatedService,
+      message: 'Hizmet başarıyla pasif hale getirildi',
+      info: {
+        relatedSales: relatedData,
+        relatedAppointments: relatedAppointments,
+        note: 'Geçmiş kayıtlar korundu, sadece hizmet pasif hale getirildi'
+      }
     });
     
   } catch (error) {
-    console.error('Silme hatası:', error);
-    return next(new AppError('Hizmet silinirken bir hata oluştu', 500, ErrorCodes.GENERAL_SERVER_ERROR));
+    console.error('Pasifleştirme hatası:', error);
+    return next(new AppError('Hizmet pasifleştirilirken bir hata oluştu', 500, ErrorCodes.GENERAL_SERVER_ERROR));
   }
 });
 
