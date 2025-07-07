@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma.js';
+import { sendSMS, prepareAppointmentSMS, prepareAppointmentCancelSMS } from '../utils/smsService.js';
 
 export const createQuickAppointment = async (req, res) => {
   try {
@@ -180,6 +181,8 @@ export const createQuickAppointment = async (req, res) => {
       }
     }
 
+
+
     const result = await prisma.$transaction(async (tx) => {
       const client = await tx.clients.create({
         data: {
@@ -263,6 +266,36 @@ export const createQuickAppointment = async (req, res) => {
 
       return appointment;
     });
+
+    // ✅ SMS BİLDİRİMİ GÖNDER (telefon numarası varsa)
+    if (phone) {
+      try {
+        const account = await prisma.accounts.findUnique({
+          where: { id: accountId },
+          select: { businessName: true }
+        });
+
+        const smsData = {
+          customerName: `${firstName} ${lastName}`,
+          serviceName: service.serviceName,
+          appointmentDate: appointmentDate,
+          staffName: staff.fullName,
+          businessName: account?.businessName || 'Bizim Işletme'
+        };
+
+        const smsMessage = prepareAppointmentSMS(smsData);
+        const smsResult = await sendSMS(phone, smsMessage);
+
+        if (smsResult.success) {
+          console.log('✅ Randevu SMS bildirimi gönderildi:', smsResult.messageId);
+        } else {
+          console.error('❌ SMS gönderme hatası:', smsResult.error);
+        }
+      } catch (smsError) {
+        console.error('❌ SMS gönderme işlemi hatası:', smsError);
+        // SMS hatası randevu oluşturma işlemini engellemez
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -497,6 +530,36 @@ export const createAppointment = async (req, res) => {
         }
       }
     });
+
+    // ✅ SMS BİLDİRİMİ GÖNDER (telefon numarası varsa)
+    if (appointment.client?.phone) {
+      try {
+        const account = await prisma.accounts.findUnique({
+          where: { id: accountId },
+          select: { businessName: true }
+        });
+
+        const smsData = {
+          customerName: `${appointment.client.firstName} ${appointment.client.lastName}`,
+          serviceName: appointment.service.serviceName,
+          appointmentDate: appointmentDate,
+          staffName: appointment.staff.fullName,
+          businessName: account?.businessName || 'Bizim Işletme'
+        };
+
+        const smsMessage = prepareAppointmentSMS(smsData);
+        const smsResult = await sendSMS(appointment.client.phone, smsMessage);
+
+        if (smsResult.success) {
+          console.log('✅ Randevu SMS bildirimi gönderildi:', smsResult.messageId);
+        } else {
+          console.error('❌ SMS gönderme hatası:', smsResult.error);
+        }
+      } catch (smsError) {
+        console.error('❌ SMS gönderme işlemi hatası:', smsError);
+        // SMS hatası randevu oluşturma işlemini engellemez
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -792,6 +855,35 @@ export const updateAppointment = async (req, res) => {
       return updatedAppointment;
     });
 
+    // ✅ RANDEVU İPTAL EDİLDİĞİNDE SMS BİLDİRİMİ GÖNDER
+    if (newStatus === 'CANCELLED' && oldStatus !== 'CANCELLED' && result.client?.phone) {
+      try {
+        const account = await prisma.accounts.findUnique({
+          where: { id: accountId },
+          select: { businessName: true }
+        });
+
+        const smsData = {
+          customerName: `${result.client.firstName} ${result.client.lastName}`,
+          serviceName: result.service.serviceName,
+          appointmentDate: result.appointmentDate,
+          businessName: account?.businessName || 'Bizim Işletme'
+        };
+
+        const smsMessage = prepareAppointmentCancelSMS(smsData);
+        const smsResult = await sendSMS(result.client.phone, smsMessage);
+
+        if (smsResult.success) {
+          console.log('✅ Randevu iptal SMS bildirimi gönderildi:', smsResult.messageId);
+        } else {
+          console.error('❌ Randevu iptal SMS hatası:', smsResult.error);
+        }
+      } catch (smsError) {
+        console.error('❌ SMS gönderme işlemi hatası:', smsError);
+        // SMS hatası güncelleme işlemini engellemez
+      }
+    }
+
     // Response hazırla
     const response = {
       success: true,
@@ -894,12 +986,56 @@ export const deleteAppointment = async (req, res) => {
       });
     }
 
+    if ((existingAppointment.status === 'PLANNED' || existingAppointment.status === 'COMPLETED')) {
+      const clientInfo = await prisma.clients.findUnique({
+        where: { id: existingAppointment.clientId },
+        select: {
+          firstName: true,
+          lastName: true,
+          phone: true
+        }
+      });
+
+      const serviceInfo = await prisma.services.findUnique({
+        where: { id: existingAppointment.serviceId },
+        select: {
+          serviceName: true
+        }
+      });
+
+      if (clientInfo?.phone) {
+        try {
+          const account = await prisma.accounts.findUnique({
+            where: { id: accountId },
+            select: { businessName: true }
+          });
+
+          const smsData = {
+            customerName: `${clientInfo.firstName} ${clientInfo.lastName}`,
+            serviceName: serviceInfo?.serviceName || 'Hizmet',
+            appointmentDate: existingAppointment.appointmentDate,
+            businessName: account?.businessName || 'Bizim Işletme'
+          };
+
+          const smsMessage = prepareAppointmentCancelSMS(smsData);
+          const smsResult = await sendSMS(clientInfo.phone, smsMessage);
+
+          if (smsResult.success) {
+            console.log('✅ Randevu silme SMS bildirimi gönderildi:', smsResult.messageId);
+          } else {
+            console.error('❌ Randevu silme SMS hatası:', smsResult.error);
+          }
+        } catch (smsError) {
+          console.error('❌ SMS gönderme işlemi hatası:', smsError);
+        }
+      }
+    }
+
     const response = {
       success: true,
       message: 'Randevu başarıyla silindi'
     };
 
-    // Seans geri yüklendiyse bilgi ekle
     if (sessionRestored) {
       response.sessionInfo = {
         restored: true,
