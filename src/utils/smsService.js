@@ -1,9 +1,29 @@
 import twilio from 'twilio';
 
-const client = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
+let client = null;
+let isConfigured = false;
+
+try {
+  if (process.env.TWILIO_ACCOUNT_SID && 
+      process.env.TWILIO_AUTH_TOKEN && 
+      process.env.TWILIO_PHONE_NUMBER) {
+    
+    if (process.env.TWILIO_ACCOUNT_SID.startsWith('AC')) {
+      client = twilio(
+        process.env.TWILIO_ACCOUNT_SID,
+        process.env.TWILIO_AUTH_TOKEN
+      );
+      isConfigured = true;
+      console.log('✅ Twilio SMS servisi aktif');
+    } else {
+      console.warn('⚠️ TWILIO_ACCOUNT_SID "AC" ile başlamalıdır');
+    }
+  } else {
+    console.warn('⚠️ Twilio credentials tanımlı değil - SMS servisi deaktif');
+  }
+} catch (error) {
+  console.error('❌ Twilio initialization hatası:', error.message);
+}
 
 /**
  * @param {string} to 
@@ -12,6 +32,15 @@ const client = twilio(
  */
 export const sendSMS = async (to, message) => {
   try {
+    // Twilio yapılandırılmamışsa early return
+    if (!isConfigured || !client) {
+      console.warn('⚠️ SMS gönderilemedi: Twilio yapılandırılmamış');
+      return {
+        success: false,
+        error: 'SMS servisi aktif değil'
+      };
+    }
+
     const phoneNumber = formatPhoneNumber(to);
     
     if (!phoneNumber) {
