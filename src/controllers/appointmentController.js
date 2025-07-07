@@ -197,7 +197,7 @@ export const createQuickAppointment = async (req, res) => {
       const finalTotalAmount = totalAmount || parseFloat(service.price);
       const finalSessions = remainingSessions || (service.isSessionBased ? service.sessionCount : 1);
 
-      const finalSaleDate = saleDate ? new Date(saleDate) : new Date(appointmentDate);
+      const finalSaleDate = saleDate ? new Date(saleDate) : new Date();
       
       if (finalSaleDate > new Date()) {
         throw new Error('Satış tarihi gelecek bir tarih olamaz');
@@ -208,7 +208,7 @@ export const createQuickAppointment = async (req, res) => {
           accountId: accountId,
           clientId: client.id,
           serviceId: serviceId,
-          saleDate: finalSaleDate,  // ✅ Satış tarihi eklendi
+          saleDate: finalSaleDate,
           totalAmount: finalTotalAmount,
           remainingSessions: finalSessions
         }
