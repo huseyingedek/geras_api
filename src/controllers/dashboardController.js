@@ -82,7 +82,8 @@ export const getDashboardStats = async (req, res) => {
             lte: todayEnd
           },
           sale: {
-            accountId: accountId
+            accountId: accountId,
+            isDeleted: false
           }
         },
         include: {
@@ -110,7 +111,8 @@ export const getDashboardStats = async (req, res) => {
             lte: todayEnd
           },
           sale: {
-            accountId: accountId
+            accountId: accountId,
+            isDeleted: false
           }
         },
         include: {
@@ -188,18 +190,25 @@ export const getDashboardStats = async (req, res) => {
     // Aylık gelir hesapla
     let monthlyRevenue = 0;
     console.log('=== AYLIK ÖDEMELER DEBUG ===');
+    console.log('AccountID:', accountId);
     console.log('Dönem:', monthStart.toISOString().split('T')[0], '-', todayEnd.toISOString().split('T')[0]);
     console.log('Toplam ödeme sayısı:', monthlyPayments.length);
+    console.log('Filtre: status=COMPLETED, paymentDate aralığında, accountId:', accountId);
     
     monthlyPayments.forEach((payment, index) => {
+      const amount = parseFloat(payment.amountPaid);
       console.log(`${index + 1}. Ödeme:`, {
-        id: payment.id,
-        miktar: parseFloat(payment.amountPaid),
-        tarih: payment.paymentDate.toISOString().split('T')[0],
+        paymentId: payment.id,
         saleId: payment.saleId,
-        client: `${payment.sale.client.firstName} ${payment.sale.client.lastName}`
+        miktar: amount,
+        tarih: payment.paymentDate.toISOString().split('T')[0],
+        saat: payment.paymentDate.toISOString().split('T')[1].split('.')[0],
+        status: payment.status,
+        method: payment.paymentMethod,
+        client: `${payment.sale.client.firstName} ${payment.sale.client.lastName}`,
+        saleAccountId: payment.sale.accountId
       });
-      monthlyRevenue += parseFloat(payment.amountPaid);
+      monthlyRevenue += amount;
     });
     console.log('Hesaplanan aylık toplam:', monthlyRevenue);
 

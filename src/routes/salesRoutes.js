@@ -12,11 +12,11 @@ router.route('/')
   .post(checkPermission('sales', 'create'), salesController.createSale);
 
 router.route('/payments')
-  .get(checkPermission('sales', 'view'), salesController.getAllPayments);
+  .get(checkPermission('payments', 'view'), salesController.getAllPayments);
 
 router.route('/payments/:paymentId')
-  .get(checkPermission('sales', 'view'), salesController.getPaymentById)
-  .patch(checkPermission('sales', 'edit'), salesController.updatePaymentStatus);
+  .get(checkPermission('payments', 'view'), salesController.getPaymentById)
+  .patch(checkPermission('payments', 'update'), salesController.updatePaymentStatus);
 
 router.route('/:id')
   .get(checkPermission('sales', 'view'), salesController.getSaleById)

@@ -200,3 +200,97 @@ export {
   getMe,
   changePassword
 }; 
+
+// Oturum sahibinin izinlerini döner
+export const getMyPermissions = async (req, res, next) => {
+  try {
+    const { role, accountId, id: userId } = req.user;
+
+    // ADMIN: tüm sistem erişimi
+    if (role === 'ADMIN') {
+      return res.status(200).json({
+        status: 'success',
+        data: {
+          role,
+          accountId: null,
+          allAccess: true,
+          permissions: {}
+        }
+      });
+    }
+
+    // OWNER: hesap kapsamındaki tüm kaynaklara erişim
+    if (role === 'OWNER') {
+      // Hesaba tanımlı permission kaynaklarını çekip hepsini true işaretle
+      const defs = await prisma.permission.findMany({
+        where: { accountId },
+        select: { resource: true }
+      });
+      const resources = Array.from(new Set(defs.map(d => d.resource)));
+      const matrix = {};
+      for (const r of resources) {
+        matrix[r] = { canView: true, canCreate: true, canEdit: true, canDelete: true };
+      }
+      return res.status(200).json({
+        status: 'success',
+        data: {
+          role,
+          accountId,
+          allAccess: true,
+          permissions: matrix
+        }
+      });
+    }
+
+    // EMPLOYEE: StaffPermission üzerinden derle
+    if (role === 'EMPLOYEE') {
+      if (!accountId) {
+        return next(new AppError('İşletme bilgisi bulunamadı', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+      }
+
+      const staff = await prisma.staff.findFirst({
+        where: { userId: userId, accountId: accountId }
+      });
+
+      if (!staff) {
+        return next(new AppError('Personel kaydı bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+      }
+
+      const staffPerms = await prisma.staffPermission.findMany({
+        where: { staffId: staff.id },
+        include: { permission: true }
+      });
+
+      const permissions = {};
+      for (const sp of staffPerms) {
+        const resource = sp.permission.resource;
+        if (!permissions[resource]) {
+          permissions[resource] = { canView: false, canCreate: false, canEdit: false, canDelete: false };
+        }
+        if (sp.permission.name.endsWith('_view')) permissions[resource].canView = sp.canView;
+        if (sp.permission.name.endsWith('_create')) permissions[resource].canCreate = sp.canCreate;
+        if (sp.permission.name.endsWith('_update')) permissions[resource].canEdit = sp.canEdit;
+        if (sp.permission.name.endsWith('_delete')) permissions[resource].canDelete = sp.canDelete;
+      }
+
+      return res.status(200).json({
+        status: 'success',
+        data: {
+          role,
+          accountId,
+          allAccess: false,
+          permissions
+        }
+      });
+    }
+
+    // Diğer durumlar
+    return res.status(200).json({
+      status: 'success',
+      data: { role, accountId, allAccess: false, permissions: {} }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};

@@ -98,20 +98,19 @@ app.use(helmet({
       objectSrc: ["'none'"]
     }
   } : false, // Development'ta CSP kapalı
-  
+
   crossOriginEmbedderPolicy: false, // API için false
-  
+
   // HSTS - Sadece production'da
   hsts: process.env.NODE_ENV === 'production' ? {
     maxAge: 31536000, // 1 yıl
     includeSubDomains: true,
     preload: true
   } : false,
-  
+
   // Diğer güvenlik headers
   noSniff: true,
   frameguard: { action: 'deny' },
-  xssFilter: true,
   referrerPolicy: { policy: 'same-origin' }
 }));
 

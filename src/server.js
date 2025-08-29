@@ -50,6 +50,30 @@ async function startServer() {
     server.keepAliveTimeout = 61 * 1000; // 61 seconds
     server.headersTimeout = 65 * 1000; // 65 seconds
     
+    // 🔄 Periyodik DB keep-alive ve sağlık gözlemi (Natro ara kopmaları için)
+    const KEEP_ALIVE_INTERVAL_MS = parseInt(process.env.DB_KEEP_ALIVE_MS || '60000'); // 60s
+    const RECONNECT_BACKOFF_MS = parseInt(process.env.DB_RECONNECT_BACKOFF_MS || '5000'); // 5s
+    
+    let keepAliveTimer = setInterval(async () => {
+      try {
+        const result = await checkDatabaseConnection();
+        if (result.status !== 'healthy') {
+          console.warn('⚠️ DB health degraded, attempting lightweight reconnect...');
+          // Prisma otomatik connection pooling yönetiyor; ek olarak hafif bir disconnect/connect tetikleyebiliriz
+          await prisma.$disconnect();
+          // kısa bekleme ile yeniden bağlanma denemesi
+          await new Promise(r => setTimeout(r, RECONNECT_BACKOFF_MS));
+          await prisma.$connect();
+          console.log('✅ DB reconnect attempt completed');
+        }
+      } catch (e) {
+        console.error('❌ Keep-alive check/reconnect failed:', e?.message || e);
+      }
+    }, KEEP_ALIVE_INTERVAL_MS);
+    
+    // Referansı sakla, shutdown'da temizlenecek
+    process.dbKeepAliveTimer = keepAliveTimer;
+    
     return server;
     
   } catch (error) {
@@ -79,6 +103,10 @@ const gracefulShutdown = async (signal) => {
   }, 15000); // 15 saniye timeout
   
   try {
+    // Keep-alive timer'ı kapat
+    if (process.dbKeepAliveTimer) {
+      clearInterval(process.dbKeepAliveTimer);
+    }
     // 1. HTTP Server'ı durdur
     if (process.server) {
       await new Promise((resolve, reject) => {

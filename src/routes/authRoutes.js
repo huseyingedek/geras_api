@@ -13,6 +13,9 @@ router.get('/me', isAuthenticated, authController.getMe);
 
 router.post('/change-password', isAuthenticated, authController.changePassword);
 
+// Oturum sahibinin izin matrisi
+router.get('/my-permissions', isAuthenticated, authController.getMyPermissions);
+
 router.put('/my-business', isAuthenticated, adminController.updateMyBusiness);
 
 export default router; 

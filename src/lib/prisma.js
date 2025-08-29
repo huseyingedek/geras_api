@@ -1,23 +1,26 @@
 import { PrismaClient } from '@prisma/client';
 
-// 🚀 Professional Prisma Configuration with Connection Pool
 const createPrismaClient = () => {
-  // Production ve development için farklı ayarlar
   const isProduction = process.env.NODE_ENV === 'production';
-  
-  // Database URL düzenleme - connection pool parametreleri
+
+  const ENV_CONN_LIMIT = parseInt(process.env.DB_CONNECTION_LIMIT || (isProduction ? '3' : '5'));
+  const ENV_POOL_TIMEOUT = parseInt(process.env.DB_POOL_TIMEOUT || (isProduction ? '30' : '30'));
+  const ENV_CONNECT_TIMEOUT = parseInt(process.env.DB_CONNECT_TIMEOUT || (isProduction ? '30' : '30'));
+
   let databaseUrl = process.env.DATABASE_URL;
-  
-  if (isProduction && databaseUrl && !databaseUrl.includes('?')) {
-    // Production için connection pool ayarları ekle
-    databaseUrl += '?pool_timeout=20&connect_timeout=30&connection_limit=5';
-  } else if (isProduction && databaseUrl && databaseUrl.includes('?')) {
-    // Eğer zaten parametre varsa, pool ayarlarını kontrol et
+
+  if (isProduction && databaseUrl) {
+    const hasQuery = databaseUrl.includes('?');
+    const sep = hasQuery ? '&' : '?';
+
     if (!databaseUrl.includes('connection_limit')) {
-      databaseUrl += '&connection_limit=5';
+      databaseUrl += `${sep}connection_limit=${ENV_CONN_LIMIT}`;
     }
     if (!databaseUrl.includes('pool_timeout')) {
-      databaseUrl += '&pool_timeout=20';
+      databaseUrl += `${databaseUrl.includes('?') ? '&' : '?'}pool_timeout=${ENV_POOL_TIMEOUT}`;
+    }
+    if (!databaseUrl.includes('connect_timeout')) {
+      databaseUrl += `${databaseUrl.includes('?') ? '&' : '?'}connect_timeout=${ENV_CONNECT_TIMEOUT}`;
     }
   }
 
@@ -27,37 +30,23 @@ const createPrismaClient = () => {
         url: databaseUrl,
       },
     },
-    
-    // Log seviyesi - production'da daha az verbose
-    log: isProduction 
-      ? ['error'] 
-      : ['query', 'error', 'warn'],
-    
+
+    log: isProduction ? ['error'] : ['query', 'error', 'warn'],
+
     errorFormat: 'minimal',
-    
-    // 🚀 Transaction timeout ayarları
-    transactionOptions: {
-      timeout: isProduction ? 15000 : 30000, // Production'da daha hızlı
-      maxWait: isProduction ? 3000 : 5000,   // Production'da daha hızlı
-      isolationLevel: 'ReadCommitted'
-    }
   });
 };
 
-// Singleton pattern - Global connection reuse
 const globalForPrisma = globalThis;
 
 const prisma = globalForPrisma.prisma || createPrismaClient();
 
-// Production'da global'e kaydet (hot reload'dan korun)
 if (process.env.NODE_ENV === 'production') {
   globalForPrisma.prisma = prisma;
 } else {
-  // Development'ta her zaman global'e ata
   globalForPrisma.prisma = prisma;
 }
 
-// 🚀 Professional Graceful Shutdown Handler
 const gracefulDisconnect = async () => {
   try {
     await prisma.$disconnect();
@@ -68,12 +57,10 @@ const gracefulDisconnect = async () => {
   }
 };
 
-// Signal handlers
 process.on('beforeExit', gracefulDisconnect);
 process.on('SIGINT', gracefulDisconnect);
 process.on('SIGTERM', gracefulDisconnect);
 
-// 🚀 Connection health check function
 export const checkDatabaseConnection = async () => {
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -83,5 +70,49 @@ export const checkDatabaseConnection = async () => {
     return { status: 'unhealthy', error: error.message, timestamp: new Date().toISOString() };
   }
 };
+
+const isTransientDbError = (err) => {
+  if (!err) return false;
+  const code = err.code || '';
+  const msg = (err.message || '').toLowerCase();
+  return (
+    code === 'P1001' ||
+    code === 'P1010' ||
+    code === 'P1011' ||
+    code === 'P1017' ||
+    msg.includes('econnreset') ||
+    msg.includes('etimedout') ||
+    msg.includes('connection') ||
+    msg.includes('socket hang up') ||
+    msg.includes('server has gone away') ||
+    msg.includes('lost connection')
+  );
+};
+
+const MAX_ATTEMPTS = parseInt(process.env.DB_RETRY_ATTEMPTS || '2');
+const BACKOFF_MS = parseInt(process.env.DB_RETRY_BACKOFF_MS || '300');
+
+if (!globalForPrisma.__retry_middleware_installed) {
+  prisma.$use(async (params, next) => {
+    let attempt = 0;
+    while (true) {
+      try {
+        return await next(params);
+      } catch (err) {
+        if (attempt < MAX_ATTEMPTS && isTransientDbError(err)) {
+          attempt += 1;
+          const wait = BACKOFF_MS * attempt;
+          if (process.env.NODE_ENV !== 'production') {
+            console.warn(`⚠️ Prisma transient error, retrying ${attempt}/${MAX_ATTEMPTS} in ${wait}ms:`, err.code || err.message);
+          }
+          await new Promise((r) => setTimeout(r, wait));
+          continue;
+        }
+        throw err;
+      }
+    }
+  });
+  globalForPrisma.__retry_middleware_installed = true;
+}
 
 export default prisma; 
