@@ -224,47 +224,55 @@ export const createQuickAppointment = async (req, res) => {
           saleId: sale.id,
           appointmentDate: new Date(appointmentDate).toISOString(),
           notes: notes || null
+        }
+      });
+
+      return { appointment, client, service, staff, sale };
+    }, {
+      timeout: 15000, // 15 saniye timeout
+      maxWait: 8000   // 8 saniye bekleme
+    });
+
+    // Transaction sonrası detayları al (include ile)
+    const appointmentWithDetails = await prisma.appointments.findUnique({
+      where: { id: result.appointment.id },
+      include: {
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            email: true
+          }
         },
-        include: {
-          client: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              phone: true,
-              email: true
-            }
-          },
-          service: {
-            select: {
-              id: true,
-              serviceName: true,
-              price: true,
-              durationMinutes: true,
-              isSessionBased: true,
-              sessionCount: true
-            }
-          },
-          staff: {
-            select: {
-              id: true,
-              fullName: true,
-              role: true
-            }
-          },
-          sale: {
-            include: {
-              payments: {
-                where: {
-                  status: 'COMPLETED'
-                }
+        service: {
+          select: {
+            id: true,
+            serviceName: true,
+            price: true,
+            durationMinutes: true,
+            isSessionBased: true,
+            sessionCount: true
+          }
+        },
+        staff: {
+          select: {
+            id: true,
+            fullName: true,
+            role: true
+          }
+        },
+        sale: {
+          include: {
+            payments: {
+              where: {
+                status: 'COMPLETED'
               }
             }
           }
         }
-      });
-
-      return appointment;
+      }
     });
 
     // ✅ SMS BİLDİRİMİ GÖNDER (telefon numarası varsa)
@@ -300,7 +308,7 @@ export const createQuickAppointment = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Hızlı randevu başarıyla oluşturuldu',
-      data: result
+      data: appointmentWithDetails
     });
 
   } catch (error) {
