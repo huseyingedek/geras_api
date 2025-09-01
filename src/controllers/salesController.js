@@ -69,8 +69,61 @@ export const getAllSales = async (req, res) => {
       take: limit
     });
 
-    const totalSales = await prisma.sales.count({
-      where: whereClause
+    // Toplam sayı ve summary bilgilerini paralel olarak getir
+    const [totalSales, summaryData] = await Promise.all([
+      // Toplam kayıt sayısı
+      prisma.sales.count({
+        where: whereClause
+      }),
+      
+      // Summary için tüm satışları getir (pagination olmadan)
+      prisma.sales.findMany({
+        where: whereClause,
+        select: {
+          totalAmount: true,
+          remainingSessions: true,
+          service: {
+            select: {
+              isSessionBased: true
+            }
+          },
+          payments: {
+            where: {
+              status: 'COMPLETED'
+            },
+            select: {
+              amountPaid: true
+            }
+          }
+        }
+      })
+    ]);
+
+    // Summary hesaplamaları
+    let totalSalesAmount = 0;
+    let totalRevenue = 0;
+    let sessionBased = 0;
+    let activeSessions = 0;
+
+    summaryData.forEach(sale => {
+      // Toplam satış tutarı
+      totalSalesAmount += parseFloat(sale.totalAmount);
+      
+      // Toplam gelir (tamamlanan ödemeler)
+      const saleRevenue = sale.payments.reduce((sum, payment) => {
+        return sum + parseFloat(payment.amountPaid);
+      }, 0);
+      totalRevenue += saleRevenue;
+      
+      // Seans bazlı satış sayısı
+      if (sale.service.isSessionBased) {
+        sessionBased += 1;
+        
+        // Aktif seans sayısı (kalan seans > 0)
+        if (sale.remainingSessions > 0) {
+          activeSessions += 1;
+        }
+      }
     });
 
     res.json({
@@ -81,6 +134,12 @@ export const getAllSales = async (req, res) => {
         limit,
         total: totalSales,
         totalPages: Math.ceil(totalSales / limit)
+      },
+      summary: {
+        totalSalesAmount: parseFloat(totalSalesAmount.toFixed(2)),
+        totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+        sessionBased: sessionBased,
+        activeSessions: activeSessions
       },
       filter: {
         isDeleted: isDeleted || 'false'
@@ -949,17 +1008,32 @@ export const getAllPayments = async (req, res) => {
 
     const statusSummary = await prisma.payments.groupBy({
       by: ['status'],
-      where: {
-        sale: {
-          accountId: accountId,
-          isDeleted: false
-        }
-      },
+      where: whereClause,
       _count: {
         id: true
       },
       _sum: {
         amountPaid: true
+      }
+    });
+
+    // Bugünkü ödemeleri hesapla
+    const today = new Date();
+    const todayStart = new Date(today);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(today);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const todayPaymentsCount = await prisma.payments.count({
+      where: {
+        paymentDate: {
+          gte: todayStart,
+          lte: todayEnd
+        },
+        sale: {
+          accountId: accountId,
+          isDeleted: false
+        }
       }
     });
 
@@ -975,6 +1049,7 @@ export const getAllPayments = async (req, res) => {
       summary: {
         totalAmount: totalAmountResult._sum.amountPaid || 0,  // Sadece COMPLETED ödemeler
         totalPayments: totalPayments,
+        todayPayments: todayPaymentsCount,  // Bugünkü ödeme sayısı
         statusSummary: statusSummary
       },
       filters: {
