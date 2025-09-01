@@ -305,6 +305,13 @@ export const getServiceSalesReport = async (req, res) => {
     const { accountId } = req.user;
     const { period, startDate, endDate } = req.query;
 
+    // DEBUG: Gelen parametreleri logla
+    console.log('🔍 API\'ye gelen parametreler:');
+    console.log('- period:', period);
+    console.log('- startDate:', startDate);
+    console.log('- endDate:', endDate);
+    console.log('- accountId:', accountId);
+
     if (!accountId) {
       return res.status(400).json({
         success: false,
@@ -321,6 +328,15 @@ export const getServiceSalesReport = async (req, res) => {
       
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
+      
+      // DEBUG: Tarih dönüştürmeyi logla
+      console.log('📅 Tarih dönüştürme:');
+      console.log('- Gelen startDate string:', startDate);
+      console.log('- Dönüştürülen start Date:', start);
+      console.log('- start.toISOString():', start.toISOString());
+      console.log('- Gelen endDate string:', endDate);
+      console.log('- Dönüştürülen end Date:', end);
+      console.log('- end.toISOString():', end.toISOString());
       
       dateFilter = {
         gte: start,
@@ -388,6 +404,10 @@ export const getServiceSalesReport = async (req, res) => {
       whereClause.saleDate = dateFilter;
     }
 
+    // DEBUG: Final where clause'u logla
+    console.log('🔍 Database sorgusu:');
+    console.log('- whereClause:', JSON.stringify(whereClause, null, 2));
+
     const sales = await prisma.sales.findMany({
       where: whereClause,
       include: {
@@ -407,6 +427,16 @@ export const getServiceSalesReport = async (req, res) => {
         }
       }
     });
+
+    // DEBUG: Dönen satış verilerini logla
+    console.log('📊 Database den dönen veriler:');
+    console.log('- Toplam satış sayısı:', sales.length);
+    console.log('- İlk 3 satış:', sales.slice(0, 3).map(sale => ({
+      id: sale.id,
+      saleDate: sale.saleDate,
+      serviceName: sale.service.serviceName,
+      totalAmount: sale.totalAmount
+    })));
 
     // Hizmet bazlı gruplama ve hesaplama
     const serviceStats = {};
