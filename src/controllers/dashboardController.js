@@ -296,4 +296,191 @@ export const getDashboardSummary = async (req, res) => {
       error: error.message
     });
   }
+};
+
+// Hizmet Bazlı Satış Raporu
+export const getServiceSalesReport = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const { period, startDate, endDate } = req.query;
+
+    if (!accountId) {
+      return res.status(400).json({
+        success: false,
+        message: 'İşletme bilgisi bulunamadı'
+      });
+    }
+
+    // Tarih aralığını belirle
+    let dateFilter = {};
+    
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      
+      dateFilter = {
+        gte: start,
+        lte: end
+      };
+    } else if (period) {
+      const now = new Date();
+      
+      switch (period) {
+        case 'day':
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const todayEnd = new Date();
+          todayEnd.setHours(23, 59, 59, 999);
+          
+          dateFilter = {
+            gte: today,
+            lte: todayEnd
+          };
+          break;
+          
+        case 'week':
+          const weekStart = new Date();
+          weekStart.setDate(now.getDate() - 7);
+          weekStart.setHours(0, 0, 0, 0);
+          
+          dateFilter = {
+            gte: weekStart,
+            lte: now
+          };
+          break;
+          
+        case 'month':
+          const monthStart = new Date();
+          monthStart.setDate(1);
+          monthStart.setHours(0, 0, 0, 0);
+          
+          dateFilter = {
+            gte: monthStart,
+            lte: now
+          };
+          break;
+          
+        default:
+          // Default olarak bu ay
+          const defaultStart = new Date();
+          defaultStart.setDate(1);
+          defaultStart.setHours(0, 0, 0, 0);
+          
+          dateFilter = {
+            gte: defaultStart,
+            lte: now
+          };
+      }
+    } else {
+      // Tarih belirtilmemişse bu ay
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+      
+      dateFilter = {
+        gte: monthStart,
+        lte: new Date()
+      };
+    }
+
+    // Satışları ve ilgili verileri getir
+    const sales = await prisma.sales.findMany({
+      where: {
+        accountId: accountId,
+        isDeleted: false,
+        saleDate: dateFilter
+      },
+      include: {
+        service: {
+          select: {
+            id: true,
+            serviceName: true
+          }
+        },
+        payments: {
+          where: {
+            status: 'COMPLETED',
+            paymentDate: dateFilter
+          },
+          select: {
+            amountPaid: true
+          }
+        }
+      }
+    });
+
+    // Hizmet bazlı gruplama ve hesaplama
+    const serviceStats = {};
+    let totalRevenue = 0;
+    let totalPaidAmount = 0;
+    let totalCount = 0;
+
+    sales.forEach(sale => {
+      const serviceId = sale.serviceId;
+      const serviceName = sale.service.serviceName;
+      const saleAmount = parseFloat(sale.totalAmount);
+      
+      // Hizmet istatistiklerini başlat
+      if (!serviceStats[serviceId]) {
+        serviceStats[serviceId] = {
+          serviceId: serviceId,
+          serviceName: serviceName,
+          count: 0,
+          revenue: 0,
+          paidAmount: 0
+        };
+      }
+
+      // Satış bilgilerini ekle
+      serviceStats[serviceId].count += 1;
+      serviceStats[serviceId].revenue += saleAmount;
+      
+      // Ödemeleri hesapla
+      const paidForThisSale = sale.payments.reduce((sum, payment) => {
+        return sum + parseFloat(payment.amountPaid);
+      }, 0);
+      
+      serviceStats[serviceId].paidAmount += paidForThisSale;
+
+      // Genel toplamları güncelle
+      totalRevenue += saleAmount;
+      totalPaidAmount += paidForThisSale;
+      totalCount += 1;
+    });
+
+    // Sonuçları array'e çevir ve sırala
+    const servicesArray = Object.values(serviceStats).sort((a, b) => b.revenue - a.revenue);
+
+    // Kalan borcu hesapla
+    const remainingDebt = totalRevenue - totalPaidAmount;
+
+    res.json({
+      status: 'success',
+      data: {
+        services: servicesArray,
+        summary: {
+          totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+          totalPaidAmount: parseFloat(totalPaidAmount.toFixed(2)),
+          totalCount: totalCount,
+          remainingDebt: parseFloat(remainingDebt.toFixed(2))
+        },
+        period: {
+          type: period || 'custom',
+          startDate: dateFilter.gte?.toISOString().split('T')[0],
+          endDate: dateFilter.lte?.toISOString().split('T')[0]
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Hizmet satış raporu hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Hizmet satış raporu alınırken hata oluştu',
+      error: error.message
+    });
+  }
 }; 

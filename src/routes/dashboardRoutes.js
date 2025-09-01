@@ -15,4 +15,8 @@ router.route('/stats')
 router.route('/summary')
   .get(checkPermission('appointments', 'view'), dashboardController.getDashboardSummary);
 
+// Hizmet bazlı satış raporu
+router.route('/service-sales-report')
+  .get(checkPermission('sales', 'view'), dashboardController.getServiceSalesReport);
+
 export default router; 
