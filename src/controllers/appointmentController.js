@@ -73,9 +73,6 @@ export const createQuickAppointment = async (req, res) => {
     const appointmentEnd = new Date(appointmentStart.getTime() + (serviceDuration * 60000));
     const dayOfWeek = appointmentStart.getDay();
 
-    console.log(`Hizmet: ${service.serviceName}, Süre: ${serviceDuration} dakika`);
-    console.log(`Randevu: ${appointmentStart.toISOString()} - ${appointmentEnd.toISOString()}`);
-
     const workingHour = staff.workingHours.find(wh => wh.dayOfWeek === dayOfWeek && wh.isWorking);
     if (!workingHour) {
       return res.status(400).json({
@@ -294,9 +291,7 @@ export const createQuickAppointment = async (req, res) => {
         const smsMessage = prepareAppointmentSMS(smsData);
         const smsResult = await sendSMS(phone, smsMessage);
 
-        if (smsResult.success) {
-          console.log('✅ Randevu SMS bildirimi gönderildi:', smsResult.messageId);
-        } else {
+        if (!smsResult.success) {
           console.error('❌ SMS gönderme hatası:', smsResult.error);
         }
       } catch (smsError) {
@@ -403,10 +398,6 @@ export const createAppointment = async (req, res) => {
     // ✅ ÇAKIŞMA VE ÇALIŞMA SAATİ KONTROLÜ
     const appointmentStart = new Date(appointmentDate);
     
-    // 🇹🇷 Debug logları
-    console.log('📅 createAppointment - Gelen appointmentDate:', appointmentDate);
-    console.log('📅 createAppointment - Çevrilen appointmentStart:', appointmentStart.toISOString());
-    console.log('📅 createAppointment - Türkiye saati:', appointmentStart.toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' }));
     
     const serviceDuration = sale.service.durationMinutes || 60;
     const appointmentEnd = new Date(appointmentStart.getTime() + (serviceDuration * 60000));
@@ -558,9 +549,7 @@ export const createAppointment = async (req, res) => {
         const smsMessage = prepareAppointmentSMS(smsData);
         const smsResult = await sendSMS(appointment.client.phone, smsMessage);
 
-        if (smsResult.success) {
-          console.log('✅ Randevu SMS bildirimi gönderildi:', smsResult.messageId);
-        } else {
+        if (!smsResult.success) {
           console.error('❌ SMS gönderme hatası:', smsResult.error);
         }
       } catch (smsError) {
@@ -881,11 +870,9 @@ export const updateAppointment = async (req, res) => {
         const smsMessage = prepareAppointmentCancelSMS(smsData);
         const smsResult = await sendSMS(result.client.phone, smsMessage);
 
-        if (smsResult.success) {
-          console.log('✅ Randevu iptal SMS bildirimi gönderildi:', smsResult.messageId);
-        } else {
-          console.error('❌ Randevu iptal SMS hatası:', smsResult.error);
-        }
+                  if (!smsResult.success) {
+            console.error('❌ Randevu iptal SMS hatası:', smsResult.error);
+          }
       } catch (smsError) {
         console.error('❌ SMS gönderme işlemi hatası:', smsError);
         // SMS hatası güncelleme işlemini engellemez
@@ -1028,9 +1015,7 @@ export const deleteAppointment = async (req, res) => {
           const smsMessage = prepareAppointmentCancelSMS(smsData);
           const smsResult = await sendSMS(clientInfo.phone, smsMessage);
 
-          if (smsResult.success) {
-            console.log('✅ Randevu silme SMS bildirimi gönderildi:', smsResult.messageId);
-          } else {
+          if (!smsResult.success) {
             console.error('❌ Randevu silme SMS hatası:', smsResult.error);
           }
         } catch (smsError) {
@@ -1074,9 +1059,6 @@ export const getAppointmentById = async (req, res) => {
         message: 'Geçersiz randevu ID'
       });
     }
-
-    console.log('getAppointmentById - Gelen ID:', id);
-    console.log('getAppointmentById - AccountID:', accountId);
 
     const appointment = await prisma.appointments.findFirst({
       where: {
@@ -1603,8 +1585,6 @@ export const checkStaffAvailability = async (req, res) => {
       slotInterval = 30;
     }
 
-    console.log(`Hizmet süresi: ${serviceDuration}dk, Slot interval: ${slotInterval}dk`);
-
     let currentTime = new Date(targetDate);
     currentTime.setHours(workStartHour, workStartMinute, 0, 0);
 
@@ -1728,9 +1708,6 @@ export const validateAppointmentTime = async (req, res) => {
 
     const serviceDuration = service.durationMinutes || 60;
     const appointmentEnd = new Date(appointmentStart.getTime() + (serviceDuration * 60000));
-
-    console.log(`Doğrulama - Hizmet: ${service.serviceName}, Süre: ${serviceDuration} dakika`);
-    console.log(`Doğrulama - Randevu: ${appointmentStart.toISOString()} - ${appointmentEnd.toISOString()}`);
 
     const dayOfWeek = appointmentStart.getDay();
     const staff = await prisma.staff.findFirst({

@@ -36,22 +36,12 @@ const corsOptions = {
           'http://127.0.0.1:5173'
         ];
     
-    // Debug logging sadece development'ta
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('🔍 CORS Request Origin:', origin);
-      console.log('✅ Allowed Origins:', allowedOrigins);
-    }
+
     
     // Origin kontrolü - undefined origin'lere izin ver (Postman, mobile apps, etc.)
     if (!origin || allowedOrigins.includes(origin)) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('✅ Origin approved:', origin || 'undefined (direct access)');
-      }
       callback(null, true);
     } else {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('❌ Origin rejected:', origin);
-      }
       callback(new Error('CORS policy violation: Origin not allowed'), false);
     }
   },
@@ -72,10 +62,7 @@ const corsOptions = {
 
 // 🚀 Professional Middleware Stack
 app.use((req, res, next) => {
-  // Sadece API request'leri logla ve development'ta
-  if (req.url.includes('/api/') && process.env.NODE_ENV !== 'production') {
-    console.log(`🌐 ${req.method} ${req.url} - ${req.headers.origin || 'direct'}`);
-  }
+
   next();
 });
 

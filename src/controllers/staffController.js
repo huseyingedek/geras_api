@@ -133,10 +133,7 @@ const createStaff = catchAsync(async (req, res, next) => {
             }
           });
           
-          console.log(`${resource} için izinleri kontrol ediliyor:`, existingPermissions);
-          
           if (existingPermissions.length === 0) {
-            console.log(`${resource} için izinler bulunamadı, oluşturuluyor...`);
             const permissions = [
               { name: `${resource}_view`, description: `${resource} görüntüleme`, resource },
               { name: `${resource}_create`, description: `${resource} ekleme`, resource },
@@ -155,10 +152,8 @@ const createStaff = catchAsync(async (req, res, next) => {
               });
             }
             
-            console.log(`${resource} için izinler oluşturuldu`);
           }
           try {
-            console.log(`${resource} için personele izinler atanıyor:`, permissions[resource]);
             await assignResourcePermissionsToStaff(
               newStaff.id, 
               accountId, 
@@ -166,7 +161,6 @@ const createStaff = catchAsync(async (req, res, next) => {
               permissions[resource],
               tx
             );
-            console.log(`${resource} için personele izinler atandı`);
           } catch (error) {
             console.error(`${resource} için izin atama hatası:`, error);
             // Permission validation hatası ise işlemi durdur

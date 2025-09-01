@@ -17,7 +17,6 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 async function startServer() {
   try {
     // 1. Database connection test
-    console.log('🔌 Veritabanı bağlantısı test ediliyor...');
     const dbHealth = await Promise.race([
       checkDatabaseConnection(),
       new Promise((_, reject) => 
@@ -29,8 +28,6 @@ async function startServer() {
       throw new Error(`Database connection failed: ${dbHealth.error}`);
     }
     
-    console.log('✅ Veritabanı bağlantısı başarılı');
-    
     // 2. Start HTTP Server
     const server = app.listen(PORT, () => {
       console.log(`🚀 Server ${PORT} portunda çalışıyor`);
@@ -38,9 +35,6 @@ async function startServer() {
       console.log(`🌐 Health Check: http://localhost:${PORT}/health`);
       console.log(`📡 API Base URL: http://localhost:${PORT}/api`);
       
-      if (NODE_ENV === 'development') {
-        console.log('🔧 Development mode - Extra logging enabled');
-      }
     });
 
     // Global server reference için
@@ -64,7 +58,7 @@ async function startServer() {
           // kısa bekleme ile yeniden bağlanma denemesi
           await new Promise(r => setTimeout(r, RECONNECT_BACKOFF_MS));
           await prisma.$connect();
-          console.log('✅ DB reconnect attempt completed');
+
         }
       } catch (e) {
         console.error('❌ Keep-alive check/reconnect failed:', e?.message || e);

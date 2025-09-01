@@ -16,7 +16,6 @@ try {
     if (process.env.TWILIO_ACCOUNT_SID.startsWith('AC')) {
       client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
       isConfigured = true;
-      console.log('✅ Twilio SMS servisi aktif', TWILIO_MESSAGING_SERVICE_SID ? '(Messaging Service)' : '(Direct From)');
     } else {
       console.warn('⚠️ TWILIO_ACCOUNT_SID "AC" ile başlamalıdır');
     }
@@ -54,8 +53,6 @@ export const sendSMS = async (to, message) => {
       throw new Error('Geçersiz telefon numarası formatı');
     }
 
-    console.log(`📱 SMS gönderiliyor: ${phoneNumber}${TWILIO_MESSAGING_SERVICE_SID ? ' via MessagingService' : ''}`);
-
     const payload = {
       body: message,
       to: phoneNumber,
@@ -85,7 +82,6 @@ export const sendSMS = async (to, message) => {
 
     const response = await client.messages.create(payload);
 
-    console.log('✅ SMS başarıyla gönderildi:', response.sid);
     return {
       success: true,
       messageId: response.sid,

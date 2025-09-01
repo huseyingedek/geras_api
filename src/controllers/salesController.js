@@ -350,8 +350,6 @@ export const updateSale = async (req, res) => {
     const { id } = req.params;
     const { serviceId, totalAmount, remainingSessions, notes } = req.body;
 
-    console.log('Güncelleme isteği:', { serviceId, totalAmount, remainingSessions, notes });
-
     const existingSale = await prisma.sales.findFirst({
       where: {
         id: parseInt(id),
@@ -367,16 +365,8 @@ export const updateSale = async (req, res) => {
       });
     }
 
-    console.log('Mevcut satış:', { 
-      clientId: existingSale.clientId, 
-      serviceId: existingSale.serviceId, 
-      totalAmount: existingSale.totalAmount,
-      remainingSessions: existingSale.remainingSessions 
-    });
-
     // Eğer serviceId güncelleniyorsa, hizmeti kontrol et
     if (serviceId && serviceId !== existingSale.serviceId) {
-      console.log('Service ID güncelleniyor:', serviceId);
       const service = await prisma.services.findFirst({
         where: {
           id: serviceId,
@@ -391,7 +381,6 @@ export const updateSale = async (req, res) => {
           message: 'Hizmet bulunamadı'
         });
       }
-      console.log('Yeni service bulundu:', service.serviceName);
     }
 
     // Eğer remainingSessions güncelleniyorsa, geçerli olup olmadığını kontrol et
@@ -407,8 +396,6 @@ export const updateSale = async (req, res) => {
       totalAmount: totalAmount || existingSale.totalAmount,
       remainingSessions: remainingSessions !== undefined ? remainingSessions : existingSale.remainingSessions
     };
-
-    console.log('Güncellenecek data:', updateData);
 
     const updatedSale = await prisma.sales.update({
       where: {
