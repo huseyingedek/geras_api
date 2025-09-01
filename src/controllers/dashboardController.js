@@ -298,6 +298,7 @@ export const getDashboardSummary = async (req, res) => {
   }
 };
 
+
 // Hizmet Bazlı Satış Raporu
 export const getServiceSalesReport = async (req, res) => {
   try {
@@ -374,25 +375,21 @@ export const getServiceSalesReport = async (req, res) => {
             lte: now
           };
       }
-    } else {
-      // Tarih belirtilmemişse bu ay
-      const monthStart = new Date();
-      monthStart.setDate(1);
-      monthStart.setHours(0, 0, 0, 0);
-      
-      dateFilter = {
-        gte: monthStart,
-        lte: new Date()
-      };
     }
 
     // Satışları ve ilgili verileri getir
+    const whereClause = {
+      accountId: accountId,
+      isDeleted: false
+    };
+
+    // Eğer tarih filtresi varsa ekle
+    if (Object.keys(dateFilter).length > 0) {
+      whereClause.saleDate = dateFilter;
+    }
+
     const sales = await prisma.sales.findMany({
-      where: {
-        accountId: accountId,
-        isDeleted: false,
-        saleDate: dateFilter
-      },
+      where: whereClause,
       include: {
         service: {
           select: {
@@ -402,8 +399,7 @@ export const getServiceSalesReport = async (req, res) => {
         },
         payments: {
           where: {
-            status: 'COMPLETED',
-            paymentDate: dateFilter
+            status: 'COMPLETED'
           },
           select: {
             amountPaid: true
