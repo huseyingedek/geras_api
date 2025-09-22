@@ -625,7 +625,7 @@ export const addPaymentToSale = async (req, res) => {
   try {
     const { accountId } = req.user;
     const { id } = req.params;
-    const { amountPaid, paymentMethod, status, notes } = req.body;
+    const { amountPaid, paymentMethod, status, notes, paymentDate } = req.body;
 
     const sale = await prisma.sales.findFirst({
       where: {
@@ -659,13 +659,17 @@ export const addPaymentToSale = async (req, res) => {
       });
     }
 
+    // Ödeme tarihi - eğer verilmezse şu anki tarih
+    const finalPaymentDate = paymentDate ? new Date(paymentDate) : new Date();
+
     const payment = await prisma.payments.create({
       data: {
         saleId: parseInt(id),
         amountPaid: amountPaid,
         paymentMethod: paymentMethod || 'CASH',
         status: status || 'COMPLETED',
-        notes: notes
+        notes: notes,
+        paymentDate: finalPaymentDate
       }
     });
 
@@ -1073,7 +1077,7 @@ export const updatePaymentStatus = async (req, res) => {
   try {
     const { accountId } = req.user;
     const { paymentId } = req.params;
-    const { status, notes } = req.body;
+    const { status, notes, paymentDate } = req.body;
 
     const validStatuses = ['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED'];
     if (!validStatuses.includes(status)) {
@@ -1115,16 +1119,24 @@ export const updatePaymentStatus = async (req, res) => {
       });
     }
 
+    // Güncelleme verilerini hazırla
+    const updateData = {
+      status: status,
+      notes: notes || payment.notes,
+      updatedAt: new Date()
+    };
+
+    // Eğer paymentDate verilmişse güncelle
+    if (paymentDate) {
+      updateData.paymentDate = new Date(paymentDate);
+    }
+
     // Ödeme durumunu güncelle
     const updatedPayment = await prisma.payments.update({
       where: {
         id: parseInt(paymentId)
       },
-      data: {
-        status: status,
-        notes: notes || payment.notes,
-        updatedAt: new Date()
-      }
+      data: updateData
     });
 
     res.json({

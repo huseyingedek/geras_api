@@ -319,7 +319,6 @@ export const getServiceSalesReport = async (req, res) => {
       });
     }
 
-    // Tarih aralığını belirle
     let dateFilter = {};
     
     if (startDate && endDate) {
@@ -393,44 +392,71 @@ export const getServiceSalesReport = async (req, res) => {
       }
     }
 
-    // Satışları ve ilgili verileri getir
-    const whereClause = {
+    // İki ayrı sorgu: Satışlar ve Ödemeler
+    const salesWhereClause = {
       accountId: accountId,
       isDeleted: false
     };
+    
+    const paymentsWhereClause = {
+      status: 'COMPLETED',
+      sale: {
+        accountId: accountId,
+        isDeleted: false
+      }
+    };
 
-    // Eğer tarih filtresi varsa ekle
+    // Tarih filtresi varsa SATIŞ tarihine uygula (satışlar için)
     if (Object.keys(dateFilter).length > 0) {
-      whereClause.saleDate = dateFilter;
+      salesWhereClause.saleDate = dateFilter;
     }
 
-    // DEBUG: Final where clause'u logla
-    console.log('🔍 Database sorgusu:');
-    console.log('- whereClause:', JSON.stringify(whereClause, null, 2));
+    // Tarih filtresi varsa ÖDEME tarihine uygula (ödemeler için)  
+    if (Object.keys(dateFilter).length > 0) {
+      paymentsWhereClause.paymentDate = dateFilter;
+    }
 
-    const sales = await prisma.sales.findMany({
-      where: whereClause,
-      include: {
-        service: {
-          select: {
-            id: true,
-            serviceName: true
-          }
-        },
-        payments: {
-          where: {
-            status: 'COMPLETED'
-          },
-          select: {
-            amountPaid: true
+    console.log('🔍 Database sorguları:');
+    console.log('- salesWhereClause:', JSON.stringify(salesWhereClause, null, 2));
+    console.log('- paymentsWhereClause:', JSON.stringify(paymentsWhereClause, null, 2));
+
+    // Paralel sorgular
+    const [sales, payments] = await Promise.all([
+      // 1. Tarih aralığında yapılan satışlar
+      prisma.sales.findMany({
+        where: salesWhereClause,
+        include: {
+          service: {
+            select: {
+              id: true,
+              serviceName: true
+            }
           }
         }
-      }
-    });
+      }),
+      
+      // 2. Tarih aralığında alınan ödemeler
+      prisma.payments.findMany({
+        where: paymentsWhereClause,
+        include: {
+          sale: {
+            include: {
+              service: {
+                select: {
+                  id: true,
+                  serviceName: true
+                }
+              }
+            }
+          }
+        }
+      })
+    ]);
 
-    // DEBUG: Dönen satış verilerini logla
+    // DEBUG: Dönen verileri logla
     console.log('📊 Database den dönen veriler:');
     console.log('- Toplam satış sayısı:', sales.length);
+    console.log('- Toplam ödeme sayısı:', payments.length);
     console.log('- İlk 3 satış:', sales.slice(0, 3).map(sale => ({
       id: sale.id,
       saleDate: sale.saleDate,
@@ -440,10 +466,11 @@ export const getServiceSalesReport = async (req, res) => {
 
     // Hizmet bazlı gruplama ve hesaplama
     const serviceStats = {};
-    let totalRevenue = 0;
     let totalPaidAmount = 0;
     let totalCount = 0;
+    let totalRevenue = 0;
 
+    // 1. Önce satışları işle (totalRevenue için)
     sales.forEach(sale => {
       const serviceId = sale.serviceId;
       const serviceName = sale.service.serviceName;
@@ -463,25 +490,49 @@ export const getServiceSalesReport = async (req, res) => {
       // Satış bilgilerini ekle
       serviceStats[serviceId].count += 1;
       serviceStats[serviceId].revenue += saleAmount;
-      
-      // Ödemeleri hesapla
-      const paidForThisSale = sale.payments.reduce((sum, payment) => {
-        return sum + parseFloat(payment.amountPaid);
-      }, 0);
-      
-      serviceStats[serviceId].paidAmount += paidForThisSale;
 
       // Genel toplamları güncelle
       totalRevenue += saleAmount;
-      totalPaidAmount += paidForThisSale;
       totalCount += 1;
+    });
+
+    // 2. Sonra ödemeleri işle (paidAmount için)
+    payments.forEach(payment => {
+      const sale = payment.sale;
+      const serviceId = sale.serviceId;
+      const paidAmount = parseFloat(payment.amountPaid);
+      
+      // Eğer bu hizmet satışlarda yoksa (farklı tarih aralığında satılmış olabilir)
+      if (!serviceStats[serviceId]) {
+        serviceStats[serviceId] = {
+          serviceId: serviceId,
+          serviceName: sale.service.serviceName,
+          count: 0,
+          revenue: 0,
+          paidAmount: 0
+        };
+      }
+
+      // Ödeme bilgilerini ekle
+      serviceStats[serviceId].paidAmount += paidAmount;
+
+      // Genel toplam ödemeyi güncelle
+      totalPaidAmount += paidAmount;
     });
 
     // Sonuçları array'e çevir ve sırala
     const servicesArray = Object.values(serviceStats).sort((a, b) => b.revenue - a.revenue);
 
-    // Kalan borcu hesapla
-    const remainingDebt = totalRevenue - totalPaidAmount;
+    // Kalan borcu hesapla - sadece satış yapılan hizmetler için
+    let remainingDebt = 0;
+    servicesArray.forEach(service => {
+      if (service.revenue > 0) { // Sadece satış yapılan hizmetler
+        const serviceDebt = service.revenue - service.paidAmount;
+        if (serviceDebt > 0) { // Sadece pozitif borçları topla
+          remainingDebt += serviceDebt;
+        }
+      }
+    });
 
     res.json({
       status: 'success',
