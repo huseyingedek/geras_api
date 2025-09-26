@@ -7,19 +7,20 @@
 - SQL sekmesine git
 - `FLUSH HOSTS;` komutunu çalıştır
 
-### 2. Render Environment Variables
+### 2. Environment Variables (Hosting Panelinde Ayarla)
 ```
-DB_CONNECTION_LIMIT=2
-DB_POOL_TIMEOUT=60
-DB_CONNECT_TIMEOUT=60
-DB_KEEP_ALIVE_MS=300000
-DB_RECONNECT_BACKOFF_MS=10000
+NODE_ENV=production
+DB_CONNECTION_LIMIT=1
+DB_POOL_TIMEOUT=120
+DB_CONNECT_TIMEOUT=120
+DB_KEEP_ALIVE_MS=600000
+DB_RECONNECT_BACKOFF_MS=5000
 DB_RETRY_ATTEMPTS=1
 ```
 
 ### 3. DATABASE_URL Güncellemesi
 ```
-mysql://user:pass@host:port/db?connection_limit=2&pool_timeout=60&connect_timeout=60&max_connections=2&wait_timeout=300
+mysql://user:pass@host:port/db?connection_limit=1&pool_timeout=120&connect_timeout=120&max_connections=1&wait_timeout=600&interactive_timeout=600&autoReconnect=true
 ```
 
 ### 4. Deploy Sonrası Kontrol
@@ -27,12 +28,15 @@ mysql://user:pass@host:port/db?connection_limit=2&pool_timeout=60&connect_timeou
 - Log kontrolü: Render dashboard
 - Connection sayısı: phpMyAdmin > Status > Connections
 
-## Değişiklikler:
-- Connection limit: 3 → 2
-- Keep-alive interval: 60s → 5dk
-- Retry attempts: 2 → 1
-- Pool timeout: 30s → 60s
-- Connect timeout: 30s → 60s
+## Değişiklikler (NATRO OPTIMIZED):
+- Connection limit: 3 → 1 (Natro shared hosting için)
+- Max connections: 2 → 1 (Tek connection)
+- Keep-alive interval: 5dk → 10dk (Daha az sıklıkta kontrol)
+- Pool timeout: 30s → 120s (Daha uzun bekleme)
+- Connect timeout: 30s → 120s (Bağlantı için daha uzun süre)
+- Wait timeout: 300s → 600s (10 dakika)
+- Interactive timeout: Eklendi (600s)
+- Auto reconnect: Eklendi (true)
 
 ## İzleme:
 - Render logs'u takip et

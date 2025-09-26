@@ -45,20 +45,24 @@ async function startServer() {
     server.headersTimeout = 65 * 1000; // 65 seconds
     
     // 🔄 Periyodik DB keep-alive ve sağlık gözlemi (Natro ara kopmaları için)
-    const KEEP_ALIVE_INTERVAL_MS = parseInt(process.env.DB_KEEP_ALIVE_MS || '300000'); // 5 dakika
-    const RECONNECT_BACKOFF_MS = parseInt(process.env.DB_RECONNECT_BACKOFF_MS || '10000'); // 10s
+    const KEEP_ALIVE_INTERVAL_MS = parseInt(process.env.DB_KEEP_ALIVE_MS || '600000'); // 10 dakika (Natro için optimize)
+    const RECONNECT_BACKOFF_MS = parseInt(process.env.DB_RECONNECT_BACKOFF_MS || '5000'); // 5s
     
     let keepAliveTimer = setInterval(async () => {
       try {
         const result = await checkDatabaseConnection();
         if (result.status !== 'healthy') {
           console.warn('⚠️ DB health degraded, attempting lightweight reconnect...');
-          // Prisma otomatik connection pooling yönetiyor; ek olarak hafif bir disconnect/connect tetikleyebiliriz
-          await prisma.$disconnect();
-          // kısa bekleme ile yeniden bağlanma denemesi
-          await new Promise(r => setTimeout(r, RECONNECT_BACKOFF_MS));
-          await prisma.$connect();
-
+          // Natro için optimize edilmiş reconnection strategy
+          try {
+            await prisma.$disconnect();
+            // Daha uzun bekleme ile yeniden bağlanma (Natro shared hosting için)
+            await new Promise(r => setTimeout(r, RECONNECT_BACKOFF_MS));
+            await prisma.$connect();
+            console.log('✅ Database reconnection successful');
+          } catch (reconnectError) {
+            console.error('❌ Database reconnection failed:', reconnectError.message);
+          }
         }
       } catch (e) {
         console.error('❌ Keep-alive check/reconnect failed:', e?.message || e);
