@@ -45,8 +45,8 @@ async function startServer() {
     server.headersTimeout = 65 * 1000; // 65 seconds
     
     // 🔄 Periyodik DB keep-alive ve sağlık gözlemi (Natro ara kopmaları için)
-    const KEEP_ALIVE_INTERVAL_MS = parseInt(process.env.DB_KEEP_ALIVE_MS || '60000'); // 60s
-    const RECONNECT_BACKOFF_MS = parseInt(process.env.DB_RECONNECT_BACKOFF_MS || '5000'); // 5s
+    const KEEP_ALIVE_INTERVAL_MS = parseInt(process.env.DB_KEEP_ALIVE_MS || '300000'); // 5 dakika
+    const RECONNECT_BACKOFF_MS = parseInt(process.env.DB_RECONNECT_BACKOFF_MS || '10000'); // 10s
     
     let keepAliveTimer = setInterval(async () => {
       try {

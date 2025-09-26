@@ -3,9 +3,9 @@ import { PrismaClient } from '@prisma/client';
 const createPrismaClient = () => {
   const isProduction = process.env.NODE_ENV === 'production';
 
-  const ENV_CONN_LIMIT = parseInt(process.env.DB_CONNECTION_LIMIT || (isProduction ? '3' : '5'));
-  const ENV_POOL_TIMEOUT = parseInt(process.env.DB_POOL_TIMEOUT || (isProduction ? '30' : '30'));
-  const ENV_CONNECT_TIMEOUT = parseInt(process.env.DB_CONNECT_TIMEOUT || (isProduction ? '30' : '30'));
+  const ENV_CONN_LIMIT = parseInt(process.env.DB_CONNECTION_LIMIT || (isProduction ? '2' : '3'));
+  const ENV_POOL_TIMEOUT = parseInt(process.env.DB_POOL_TIMEOUT || (isProduction ? '60' : '30'));
+  const ENV_CONNECT_TIMEOUT = parseInt(process.env.DB_CONNECT_TIMEOUT || (isProduction ? '60' : '30'));
 
   let databaseUrl = process.env.DATABASE_URL;
 
@@ -21,6 +21,12 @@ const createPrismaClient = () => {
     }
     if (!databaseUrl.includes('connect_timeout')) {
       databaseUrl += `${databaseUrl.includes('?') ? '&' : '?'}connect_timeout=${ENV_CONNECT_TIMEOUT}`;
+    }
+    if (!databaseUrl.includes('max_connections')) {
+      databaseUrl += `${databaseUrl.includes('?') ? '&' : '?'}max_connections=2`;
+    }
+    if (!databaseUrl.includes('wait_timeout')) {
+      databaseUrl += `${databaseUrl.includes('?') ? '&' : '?'}wait_timeout=300`;
     }
   }
 
@@ -89,8 +95,8 @@ const isTransientDbError = (err) => {
   );
 };
 
-const MAX_ATTEMPTS = parseInt(process.env.DB_RETRY_ATTEMPTS || '2');
-const BACKOFF_MS = parseInt(process.env.DB_RETRY_BACKOFF_MS || '300');
+const MAX_ATTEMPTS = parseInt(process.env.DB_RETRY_ATTEMPTS || '1');
+const BACKOFF_MS = parseInt(process.env.DB_RETRY_BACKOFF_MS || '1000');
 
 if (!globalForPrisma.__retry_middleware_installed) {
   prisma.$use(async (params, next) => {
