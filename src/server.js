@@ -2,21 +2,16 @@ import dotenv from 'dotenv';
 import app from './app.js';
 import prisma, { checkDatabaseConnection } from './lib/prisma.js';
 
-// Environment variables yükle
 dotenv.config();
 
-// 🇹🇷 TIMEZONE AYARI - Türkiye saati için
 process.env.TZ = 'Europe/Istanbul';
 
 const PORT = process.env.PORT || 5000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-/**
- * 🚀 Professional Server Startup
- */
+
 async function startServer() {
   try {
-    // 1. Database connection test
     const dbHealth = await Promise.race([
       checkDatabaseConnection(),
       new Promise((_, reject) => 
@@ -37,40 +32,12 @@ async function startServer() {
       
     });
 
-    // Global server reference için
     process.server = server;
     
-    // Keep-alive timeout (for cloud platforms)
     server.keepAliveTimeout = 61 * 1000; // 61 seconds
     server.headersTimeout = 65 * 1000; // 65 seconds
     
-    // 🔄 Periyodik DB keep-alive ve sağlık gözlemi (Natro ara kopmaları için)
-    const KEEP_ALIVE_INTERVAL_MS = parseInt(process.env.DB_KEEP_ALIVE_MS || '600000'); // 10 dakika (Natro için optimize)
-    const RECONNECT_BACKOFF_MS = parseInt(process.env.DB_RECONNECT_BACKOFF_MS || '5000'); // 5s
-    
-    let keepAliveTimer = setInterval(async () => {
-      try {
-        const result = await checkDatabaseConnection();
-        if (result.status !== 'healthy') {
-          console.warn('⚠️ DB health degraded, attempting lightweight reconnect...');
-          // Natro için optimize edilmiş reconnection strategy
-          try {
-            await prisma.$disconnect();
-            // Daha uzun bekleme ile yeniden bağlanma (Natro shared hosting için)
-            await new Promise(r => setTimeout(r, RECONNECT_BACKOFF_MS));
-            await prisma.$connect();
-            console.log('✅ Database reconnection successful');
-          } catch (reconnectError) {
-            console.error('❌ Database reconnection failed:', reconnectError.message);
-          }
-        }
-      } catch (e) {
-        console.error('❌ Keep-alive check/reconnect failed:', e?.message || e);
-      }
-    }, KEEP_ALIVE_INTERVAL_MS);
-    
-    // Referansı sakla, shutdown'da temizlenecek
-    process.dbKeepAliveTimer = keepAliveTimer;
+    console.log('✅ Database connection established with Neon PostgreSQL');
     
     return server;
     
@@ -78,7 +45,6 @@ async function startServer() {
     console.error('❌ Server başlatılamadı:', error.message);
     console.error('🔍 Error details:', error);
     
-    // Cleanup ve exit
     try {
       await prisma.$disconnect();
     } catch (disconnectError) {
@@ -89,9 +55,6 @@ async function startServer() {
   }
 }
 
-/**
- * 🚀 Professional Graceful Shutdown
- */
 const gracefulShutdown = async (signal) => {
   console.log(`\n📡 ${signal} sinyali alındı, güvenli kapatma başlatılıyor...`);
   
@@ -101,11 +64,6 @@ const gracefulShutdown = async (signal) => {
   }, 15000); // 15 saniye timeout
   
   try {
-    // Keep-alive timer'ı kapat
-    if (process.dbKeepAliveTimer) {
-      clearInterval(process.dbKeepAliveTimer);
-    }
-    // 1. HTTP Server'ı durdur
     if (process.server) {
       await new Promise((resolve, reject) => {
         process.server.close((error) => {
@@ -120,11 +78,9 @@ const gracefulShutdown = async (signal) => {
       });
     }
     
-    // 2. Aktif bağlantıları bekle
     console.log('⏳ Aktif bağlantılar sonlandırılıyor...');
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // 3. Database bağlantısını kapat
     await prisma.$disconnect();
     console.log('💾 Veritabanı bağlantısı kapatıldı');
     
@@ -136,7 +92,6 @@ const gracefulShutdown = async (signal) => {
     clearTimeout(shutdownTimeout);
     console.error('❌ Kapatma sırasında hata:', error);
     
-    // Force disconnect
     try {
       await prisma.$disconnect();
     } catch (disconnectError) {
@@ -147,11 +102,9 @@ const gracefulShutdown = async (signal) => {
   }
 };
 
-// 🚀 Signal handlers
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
-// 🚀 Unhandled exception handlers
 process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught Exception:', error);
   console.error('💥 Stack:', error.stack);
@@ -164,7 +117,6 @@ process.on('unhandledRejection', (reason, promise) => {
   gracefulShutdown('UNHANDLED_REJECTION');
 });
 
-// 🚀 Start the server
 startServer().catch((error) => {
   console.error('❌ Server startup failed:', error);
   process.exit(1);
