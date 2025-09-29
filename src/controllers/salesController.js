@@ -12,7 +12,7 @@ export const getAllSales = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
-    const { isDeleted } = req.query;
+    const { isDeleted, search } = req.query;
 
     let whereClause = {
       accountId: accountId
@@ -23,6 +23,44 @@ export const getAllSales = async (req, res) => {
     } else if (isDeleted === 'all') {
     } else {
       whereClause.isDeleted = false;
+    }
+
+    // Müşteri ismiyle arama özelliği
+    if (search && search.trim()) {
+      const searchTerm = search.trim().toLowerCase();
+      whereClause.client = {
+        OR: [
+          {
+            firstName: {
+              contains: searchTerm,
+              mode: 'insensitive'
+            }
+          },
+          {
+            lastName: {
+              contains: searchTerm,
+              mode: 'insensitive'
+            }
+          },
+          // Tam isim araması için (ad + soyad birleşimi)
+          {
+            AND: [
+              {
+                OR: [
+                  { firstName: { contains: searchTerm.split(' ')[0] || '', mode: 'insensitive' } },
+                  { lastName: { contains: searchTerm.split(' ')[0] || '', mode: 'insensitive' } }
+                ]
+              },
+              searchTerm.split(' ').length > 1 ? {
+                OR: [
+                  { firstName: { contains: searchTerm.split(' ')[1] || '', mode: 'insensitive' } },
+                  { lastName: { contains: searchTerm.split(' ')[1] || '', mode: 'insensitive' } }
+                ]
+              } : {}
+            ]
+          }
+        ]
+      };
     }
 
     const sales = await prisma.sales.findMany({
@@ -142,7 +180,8 @@ export const getAllSales = async (req, res) => {
         activeSessions: activeSessions
       },
       filter: {
-        isDeleted: isDeleted || 'false'
+        isDeleted: isDeleted || 'false',
+        search: search || null
       }
     });
   } catch (error) {
@@ -935,7 +974,7 @@ export const getAllPayments = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
-    const { paymentMethod, status, startDate, endDate } = req.query;
+    const { paymentMethod, status, startDate, endDate, search } = req.query;
 
     let whereClause = {
       sale: {
@@ -960,6 +999,61 @@ export const getAllPayments = async (req, res) => {
       if (endDate) {
         whereClause.paymentDate.lte = new Date(endDate);
       }
+    }
+
+    // Müşteri adı ve hizmet adıyla arama özelliği
+    if (search && search.trim()) {
+      const searchTerm = search.trim().toLowerCase();
+      whereClause.sale = {
+        ...whereClause.sale,
+        OR: [
+          // Müşteri adı araması
+          {
+            client: {
+              OR: [
+                {
+                  firstName: {
+                    contains: searchTerm,
+                    mode: 'insensitive'
+                  }
+                },
+                {
+                  lastName: {
+                    contains: searchTerm,
+                    mode: 'insensitive'
+                  }
+                },
+                // Tam isim araması için (ad + soyad birleşimi)
+                {
+                  AND: [
+                    {
+                      OR: [
+                        { firstName: { contains: searchTerm.split(' ')[0] || '', mode: 'insensitive' } },
+                        { lastName: { contains: searchTerm.split(' ')[0] || '', mode: 'insensitive' } }
+                      ]
+                    },
+                    searchTerm.split(' ').length > 1 ? {
+                      OR: [
+                        { firstName: { contains: searchTerm.split(' ')[1] || '', mode: 'insensitive' } },
+                        { lastName: { contains: searchTerm.split(' ')[1] || '', mode: 'insensitive' } }
+                      ]
+                    } : {}
+                  ]
+                }
+              ]
+            }
+          },
+          // Hizmet adı araması
+          {
+            service: {
+              serviceName: {
+                contains: searchTerm,
+                mode: 'insensitive'
+              }
+            }
+          }
+        ]
+      };
     }
 
     const payments = await prisma.payments.findMany({
@@ -1060,7 +1154,8 @@ export const getAllPayments = async (req, res) => {
         paymentMethod: paymentMethod || 'all',
         status: status || 'all',
         startDate: startDate || null,
-        endDate: endDate || null
+        endDate: endDate || null,
+        search: search || null
       }
     });
   } catch (error) {

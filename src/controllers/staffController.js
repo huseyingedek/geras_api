@@ -772,6 +772,7 @@ const getModuleName = (resource) => {
     'payments': 'Ödemeler',
     'sessions': 'Seanslar',
     'reports': 'Raporlar',
+    'settings': 'Ayarlar',
     'admin': 'Yönetim'
   };
   

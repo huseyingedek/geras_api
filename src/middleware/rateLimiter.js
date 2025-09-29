@@ -22,7 +22,7 @@ export const apiLimiter = rateLimit({
 // 🚀 Auth endpoint'leri için sıkı limiter
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 dakika  
-  max: 5, // IP başına 15 dakikada 5 login denemesi
+  max: 30, // IP başına 15 dakikada 5 login denemesi
   message: {
     status: 'error',
     error: {

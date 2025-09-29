@@ -17,6 +17,8 @@
     "monitor": "pm2 monit",
     "migration:export": "node scripts/export-mysql-data.js",
     "migration:import": "node scripts/import-to-postgresql.js",
+    "migration:csv": "node scripts/import-csv-to-postgresql.js",
+    "migration:simple": "node scripts/simple-csv-import.js",
     "migration:full": "npm run migration:export && npm run migration:import"
   },
   "keywords": [
@@ -50,6 +52,7 @@
     "@prisma/client": "^6.8.2",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
+    "csv-parser": "^3.2.0",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "express-mongo-sanitize": "^2.2.0",

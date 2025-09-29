@@ -2,13 +2,13 @@ import mysql from 'mysql2/promise';
 import fs from 'fs';
 import path from 'path';
 
-// MySQL connection configuration
+// Natro MySQL connection configuration
 const MYSQL_CONFIG = {
-  host: 'your-natro-mysql-host',
-  user: 'your-mysql-username',
-  password: 'your-mysql-password',
-  database: 'your-database-name',
-  port: 3306
+  host: process.env.NATRO_MYSQL_HOST || 'your-natro-mysql-host',
+  user: process.env.NATRO_MYSQL_USER || 'your-mysql-username', 
+  password: process.env.NATRO_MYSQL_PASSWORD || 'your-mysql-password',
+  database: process.env.NATRO_MYSQL_DATABASE || 'your-database-name',
+  port: parseInt(process.env.NATRO_MYSQL_PORT || '3306')
 };
 
 // Tables to export (in dependency order)
