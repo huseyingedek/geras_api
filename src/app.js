@@ -23,12 +23,18 @@ const corsOptions = {
       ? (process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [
           'https://wisorsoft.xyz',
           'https://www.wisorsoft.xyz',
-          'https://geras-client-rose.vercel.app'
+          'https://geras-client-rose.vercel.app',
+          'https://app.gerasonline.com',
+          'https://gerasonline.com',
+          'https://www.gerasonline.com'
         ])
       : [
           'https://wisorsoft.xyz',
           'https://www.wisorsoft.xyz', 
           'https://geras-client-rose.vercel.app',
+          'https://app.gerasonline.com',
+          'https://gerasonline.com',
+          'https://www.gerasonline.com',
           'http://localhost:3000',
           'http://localhost:3001',
           'http://localhost:5173',
