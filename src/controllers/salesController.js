@@ -6,13 +6,74 @@ const calculatePrice = (service, quantity) => {
   return parseFloat(calculatedPrice.toFixed(2));
 };
 
+// Tarih filtreleme helper fonksiyonları
+const getDateRange = (period) => {
+  const now = new Date();
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  
+  switch (period) {
+    case 'today':
+      const todayEnd = new Date(today);
+      todayEnd.setHours(23, 59, 59, 999);
+      return {
+        startDate: today,
+        endDate: todayEnd
+      };
+    
+    case 'yesterday':
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayEnd = new Date(yesterday);
+      yesterdayEnd.setHours(23, 59, 59, 999);
+      return {
+        startDate: yesterday,
+        endDate: yesterdayEnd
+      };
+    
+    case 'thisWeek':
+      const startOfWeek = new Date(today);
+      const dayOfWeek = startOfWeek.getDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Pazartesi başlangıç
+      startOfWeek.setDate(startOfWeek.getDate() + diff);
+      startOfWeek.setHours(0, 0, 0, 0);
+      
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(endOfWeek.getDate() + 6); // Pazar günü sonu
+      endOfWeek.setHours(23, 59, 59, 999);
+      
+      return {
+        startDate: startOfWeek,
+        endDate: endOfWeek
+      };
+    
+    case 'thisMonth':
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      
+      const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0); // Ayın son günü
+      endOfMonth.setHours(23, 59, 59, 999);
+      
+      return {
+        startDate: startOfMonth,
+        endDate: endOfMonth
+      };
+    
+    default:
+      return null;
+  }
+};
+
 export const getAllSales = async (req, res) => {
   try {
     const { accountId } = req.user;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
-    const { isDeleted, search } = req.query;
+    const { isDeleted, search, period, startDate, endDate } = req.query;
 
     let whereClause = {
       accountId: accountId
@@ -23,6 +84,38 @@ export const getAllSales = async (req, res) => {
     } else if (isDeleted === 'all') {
     } else {
       whereClause.isDeleted = false;
+    }
+
+    // Tarih filtreleme
+    let dateFilter = null;
+
+    if (period && period !== 'custom') {
+      // Hızlı tarih seçimleri (bugün, dün, bu hafta, bu ay)
+      dateFilter = getDateRange(period);
+    } else if (startDate || endDate) {
+      // Özel tarih aralığı
+      dateFilter = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        dateFilter.startDate = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.endDate = end;
+      }
+    }
+
+    // Tarih filtresini whereClause'a ekle
+    if (dateFilter && (dateFilter.startDate || dateFilter.endDate)) {
+      whereClause.saleDate = {};
+      if (dateFilter.startDate) {
+        whereClause.saleDate.gte = dateFilter.startDate;
+      }
+      if (dateFilter.endDate) {
+        whereClause.saleDate.lte = dateFilter.endDate;
+      }
     }
 
     // Müşteri ismiyle arama özelliği
@@ -181,8 +274,15 @@ export const getAllSales = async (req, res) => {
       },
       filter: {
         isDeleted: isDeleted || 'false',
-        search: search || null
-      }
+        search: search || null,
+        period: period || null,
+        startDate: startDate || null,
+        endDate: endDate || null
+      },
+      dateRange: dateFilter ? {
+        startDate: dateFilter.startDate?.toISOString(),
+        endDate: dateFilter.endDate?.toISOString()
+      } : null
     });
   } catch (error) {
     console.error('Satışları listeleme hatası:', error);
@@ -974,7 +1074,7 @@ export const getAllPayments = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
-    const { paymentMethod, status, startDate, endDate, search } = req.query;
+    const { paymentMethod, status, period, startDate, endDate, search } = req.query;
 
     let whereClause = {
       sale: {
@@ -991,13 +1091,35 @@ export const getAllPayments = async (req, res) => {
       whereClause.status = status;
     }
 
-    if (startDate || endDate) {
-      whereClause.paymentDate = {};
+    // Tarih filtreleme (ödemeler için)
+    let dateFilter = null;
+
+    if (period && period !== 'custom') {
+      // Hızlı tarih seçimleri (bugün, dün, bu hafta, bu ay)
+      dateFilter = getDateRange(period);
+    } else if (startDate || endDate) {
+      // Özel tarih aralığı
+      dateFilter = {};
       if (startDate) {
-        whereClause.paymentDate.gte = new Date(startDate);
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        dateFilter.startDate = start;
       }
       if (endDate) {
-        whereClause.paymentDate.lte = new Date(endDate);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.endDate = end;
+      }
+    }
+
+    // Tarih filtresini whereClause'a ekle (paymentDate için)
+    if (dateFilter && (dateFilter.startDate || dateFilter.endDate)) {
+      whereClause.paymentDate = {};
+      if (dateFilter.startDate) {
+        whereClause.paymentDate.gte = dateFilter.startDate;
+      }
+      if (dateFilter.endDate) {
+        whereClause.paymentDate.lte = dateFilter.endDate;
       }
     }
 
@@ -1150,13 +1272,18 @@ export const getAllPayments = async (req, res) => {
         todayPayments: todayPaymentsCount,  // Bugünkü ödeme sayısı
         statusSummary: statusSummary
       },
-      filters: {
+      filter: {
         paymentMethod: paymentMethod || 'all',
         status: status || 'all',
+        period: period || null,
         startDate: startDate || null,
         endDate: endDate || null,
         search: search || null
-      }
+      },
+      dateRange: dateFilter ? {
+        startDate: dateFilter.startDate?.toISOString(),
+        endDate: dateFilter.endDate?.toISOString()
+      } : null
     });
   } catch (error) {
     console.error('Ödemeler listeleme hatası:', error);
