@@ -1,46 +1,42 @@
-import twilio from 'twilio';
+import axios from 'axios';
 
-let client = null;
 let isConfigured = false;
 
 const SMS_ENABLED = (process.env.SMS_ENABLED || 'true').toLowerCase() !== 'false';
-const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID || null; // MGxxxx
-const TWILIO_STATUS_CALLBACK_URL = process.env.TWILIO_STATUS_CALLBACK_URL || null; // optional delivery callbacks
+
+const ILETIBILGI_API_URL = process.env.ILETIBILGI_API_URL || null;
+const ILETIBILGI_USERNAME = process.env.ILETIBILGI_USERNAME || null;
+const ILETIBILGI_PASSWORD = process.env.ILETIBILGI_PASSWORD || null;
+const ILETIBILGI_SENDER = process.env.ILETIBILGI_SENDER || null;
+const ILETIBILGI_ENABLED = (process.env.ILETIBILGI_ENABLED || 'false').toLowerCase() === 'true';
 
 try {
-  if (
-    process.env.TWILIO_ACCOUNT_SID &&
-    process.env.TWILIO_AUTH_TOKEN &&
-    (process.env.TWILIO_PHONE_NUMBER || TWILIO_MESSAGING_SERVICE_SID)
-  ) {
-    if (process.env.TWILIO_ACCOUNT_SID.startsWith('AC')) {
-      client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-      isConfigured = true;
-    } else {
-      console.warn('⚠️ TWILIO_ACCOUNT_SID "AC" ile başlamalıdır');
-    }
+  if (ILETIBILGI_API_URL && ILETIBILGI_USERNAME && ILETIBILGI_PASSWORD && ILETIBILGI_SENDER && ILETIBILGI_ENABLED) {
+    isConfigured = true;
+    console.log('✅ İletiBilgi SMS servisi aktif');
   } else {
-    console.warn('⚠️ Twilio credentials veya sender eksik - SMS servisi deaktif');
+    console.warn('⚠️ İletiBilgi credentials eksik - SMS servisi deaktif');
+    console.warn('Gerekli: ILETIBILGI_API_URL, ILETIBILGI_USERNAME, ILETIBILGI_PASSWORD, ILETIBILGI_SENDER, ILETIBILGI_ENABLED');
   }
 } catch (error) {
-  console.error('❌ Twilio initialization hatası:', error.message);
+  console.error('❌ İletiBilgi SMS servisi initialization hatası:', error.message);
 }
 
 /**
- * @param {string} to 
- * @param {string} message 
+ * İletiBilgi API ile SMS gönder
+ * @param {string} to - Telefon numarası
+ * @param {string} message - Mesaj içeriği
  * @returns {Promise<object>}
  */
 export const sendSMS = async (to, message) => {
   try {
-    // SMS opsiyonel olarak kapatılabilir veya Twilio hazır değilse sorunsuz dön
     if (!SMS_ENABLED) {
       console.warn('⚠️ SMS_ENABLED=false - SMS gönderimi atlandı');
       return { success: false, skipped: true, reason: 'SMS_DISABLED' };
     }
 
-    if (!isConfigured || !client) {
-      console.warn('⚠️ SMS gönderilemedi: Twilio yapılandırılmamış');
+    if (!isConfigured) {
+      console.warn('⚠️ SMS gönderilemedi: İletiBilgi servisi yapılandırılmamış');
       return {
         success: false,
         error: 'SMS servisi aktif değil'
@@ -53,95 +49,109 @@ export const sendSMS = async (to, message) => {
       throw new Error('Geçersiz telefon numarası formatı');
     }
 
+    const auth = Buffer.from(`${ILETIBILGI_USERNAME}:${ILETIBILGI_PASSWORD}`).toString('base64');
+
     const payload = {
-      body: message,
-      to: phoneNumber,
+      type: 1,              // SMS tipi
+      sendingType: 0,       // Hemen gönder
+      title: ILETIBILGI_SENDER,
+      content: message,
+      number: phoneNumber,
+      encoding: 1,          // Türkçe karakter desteği
+      sender: ILETIBILGI_SENDER
     };
 
-    if (TWILIO_MESSAGING_SERVICE_SID) {
-      payload.messagingServiceSid = TWILIO_MESSAGING_SERVICE_SID;
-    } else {
-      payload.from = process.env.TWILIO_PHONE_NUMBER;
+    console.log('📱 İletiBilgi SMS gönderiliyor:', { 
+      to: phoneNumber, 
+      sender: ILETIBILGI_SENDER,
+      messageLength: message.length 
+    });
+
+    const response = await axios.post(ILETIBILGI_API_URL, payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${auth}`
+      },
+      timeout: 10000 
+    });
+
+    // Başarılı response kontrolü
+    if (response.data && response.data.data && response.data.data.pkgID) {
+      console.log('✅ İletiBilgi SMS başarılı:', response.data.data.pkgID);
+      return {
+        success: true,
+        messageId: response.data.data.pkgID.toString(),
+        status: 'sent'
+      };
     }
 
-    // Status callback URL geçerli mi? Geçerli değilse payload'a ekleme
-    if (TWILIO_STATUS_CALLBACK_URL) {
-      try {
-        const u = new URL(TWILIO_STATUS_CALLBACK_URL);
-        const isHttp = u.protocol === 'http:' || u.protocol === 'https:';
-        const isLocalhost = ['localhost', '127.0.0.1'].includes(u.hostname);
-        if (isHttp && !isLocalhost) {
-          payload.statusCallback = TWILIO_STATUS_CALLBACK_URL;
-        } else {
-          console.warn('⚠️ TWILIO_STATUS_CALLBACK_URL geçersiz veya yerel. Payload\'a eklenmedi.');
-        }
-      } catch (_) {
-        console.warn('⚠️ TWILIO_STATUS_CALLBACK_URL formatı hatalı. Payload\'a eklenmedi.');
-      }
+    // Hata response kontrolü
+    if (response.data && response.data.err) {
+      throw new Error(`İletiBilgi API Hatası: ${response.data.err.message} (Code: ${response.data.err.code})`);
     }
 
-    const response = await client.messages.create(payload);
-
-    return {
-      success: true,
-      messageId: response.sid,
-      status: response.status
-    };
+    throw new Error('İletiBilgi API beklenmeyen response formatı');
 
   } catch (error) {
-    console.error('❌ SMS gönderme hatası:', error);
+    console.error('❌ İletiBilgi SMS hatası:', error.message);
+    
+    if (error.response) {
+      console.error('API Response:', error.response.data);
+    }
+
     return {
       success: false,
       error: error.message,
-      code: error.code,
-      moreInfo: error.moreInfo
+      code: error.response?.data?.err?.code || 'UNKNOWN_ERROR'
     };
   }
 };
 
+
 /**
- * Telefon numarasını Twilio formatına çevir
+ * Telefon numarasını İletiBilgi formatına çevir
  * @param {string} phone - Telefon numarası
  * @returns {string|null} - Formatlanmış telefon numarası veya null
  */
 const formatPhoneNumber = (phone) => {
   if (!phone) return null;
   
-  // Türkiye telefon numarası formatları
+  // Türkiye telefon numarası formatları - İletiBilgi için
   let cleanPhone = phone.replace(/\D/g, ''); // Sadece rakamları al
   
-  // 0090 ile başlıyorsa +90'a çevir
+  // 0090 ile başlıyorsa 90'a çevir
   if (cleanPhone.startsWith('0090')) {
-    return `+${cleanPhone.slice(2)}`; // 0090xxxxxxxxxx -> +90xxxxxxxxxx
+    return cleanPhone.slice(2); // 0090xxxxxxxxxx -> 90xxxxxxxxxx
   }
 
-  // 00 ile başlayan uluslararası formatı + ile değiştir
+  // 00 ile başlayan uluslararası formatı
   if (cleanPhone.startsWith('00')) {
-    return `+${cleanPhone.slice(2)}`;
+    return cleanPhone.slice(2);
+  }
+
+  // +90 ile başlıyorsa + işaretini kaldır
+  if (phone.startsWith('+90')) {
+    return cleanPhone;
   }
 
   // Türkiye kodu ile başlıyorsa
   if (cleanPhone.startsWith('90')) {
-    return `+${cleanPhone}`;
+    return cleanPhone;
   }
   
   // 0 ile başlıyorsa (yerli format)
   if (cleanPhone.startsWith('0')) {
-    return `+9${cleanPhone}`;
+    return `9${cleanPhone}`; // 05xxxxxxxxx -> 905xxxxxxxxx
   }
   
   // 5 ile başlıyorsa (0 olmadan)
   if (cleanPhone.startsWith('5') && cleanPhone.length === 10) {
-    return `+90${cleanPhone}`;
-  }
-  
-  // Zaten + ile başlıyorsa
-  if (phone.startsWith('+')) {
-    return phone;
+    return `90${cleanPhone}`; // 5xxxxxxxxx -> 905xxxxxxxxx
   }
   
   return null;
 };
+
 
 /**
  * Randevu bildirimi SMS'i hazırla

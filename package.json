@@ -50,6 +50,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.8.2",
+    "axios": "^1.12.2",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "csv-parser": "^3.2.0",
@@ -62,7 +63,6 @@
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.6.5",
     "node-cron": "^4.2.0",
-    "twilio": "^5.7.2",
     "xss-clean": "^0.1.4"
   },
   "devDependencies": {
