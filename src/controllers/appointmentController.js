@@ -574,13 +574,101 @@ export const createAppointment = async (req, res) => {
   }
 };
 
+// Randevular için tarih filtreleme helper fonksiyonu
+const getAppointmentDateRange = (period) => {
+  const now = new Date();
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  
+  switch (period) {
+    case 'today':
+      const todayEnd = new Date(today);
+      todayEnd.setHours(23, 59, 59, 999);
+      return {
+        startDate: today,
+        endDate: todayEnd
+      };
+    
+    case 'yesterday':
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayEnd = new Date(yesterday);
+      yesterdayEnd.setHours(23, 59, 59, 999);
+      return {
+        startDate: yesterday,
+        endDate: yesterdayEnd
+      };
+    
+    case 'thisWeek':
+      const startOfWeek = new Date(today);
+      const dayOfWeek = startOfWeek.getDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Pazartesi başlangıç
+      startOfWeek.setDate(startOfWeek.getDate() + diff);
+      startOfWeek.setHours(0, 0, 0, 0);
+      
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(endOfWeek.getDate() + 6); // Pazar günü sonu
+      endOfWeek.setHours(23, 59, 59, 999);
+      
+      return {
+        startDate: startOfWeek,
+        endDate: endOfWeek
+      };
+    
+    case 'nextWeek':
+      // 🆕 GELECEK HAFTA FİLTRESİ
+      const nextWeekStart = new Date(today);
+      const currentDayOfWeek = nextWeekStart.getDay();
+      const daysUntilNextMonday = currentDayOfWeek === 0 ? 1 : 8 - currentDayOfWeek;
+      nextWeekStart.setDate(nextWeekStart.getDate() + daysUntilNextMonday);
+      nextWeekStart.setHours(0, 0, 0, 0);
+      
+      const nextWeekEnd = new Date(nextWeekStart);
+      nextWeekEnd.setDate(nextWeekEnd.getDate() + 6); // Pazar günü sonu
+      nextWeekEnd.setHours(23, 59, 59, 999);
+      
+      return {
+        startDate: nextWeekStart,
+        endDate: nextWeekEnd
+      };
+    
+    case 'thisMonth':
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      
+      const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      endOfMonth.setHours(23, 59, 59, 999);
+      
+      return {
+        startDate: startOfMonth,
+        endDate: endOfMonth
+      };
+    
+    case 'nextMonth':
+      // 🆕 GELECEK AY FİLTRESİ
+      const nextMonthStart = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+      nextMonthStart.setHours(0, 0, 0, 0);
+      
+      const nextMonthEnd = new Date(today.getFullYear(), today.getMonth() + 2, 0);
+      nextMonthEnd.setHours(23, 59, 59, 999);
+      
+      return {
+        startDate: nextMonthStart,
+        endDate: nextMonthEnd
+      };
+    
+    default:
+      return null;
+  }
+};
+
 export const getAllAppointments = async (req, res) => {
   try {
     const { accountId } = req.user;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
-    const { status, staffId, startDate, endDate } = req.query;
+    const { status, staffId, period, startDate, endDate } = req.query;
 
     let whereClause = {
       accountId: accountId
@@ -594,13 +682,35 @@ export const getAllAppointments = async (req, res) => {
       whereClause.staffId = parseInt(staffId);
     }
 
-    if (startDate || endDate) {
-      whereClause.appointmentDate = {};
+    // 📅 GELİŞMİŞ TARİH FİLTRELEME
+    let dateFilter = null;
+
+    if (period && period !== 'custom') {
+      // Hızlı tarih seçimleri (bugün, dün, bu hafta, gelecek hafta, bu ay, gelecek ay)
+      dateFilter = getAppointmentDateRange(period);
+    } else if (startDate || endDate) {
+      // Özel tarih aralığı
+      dateFilter = {};
       if (startDate) {
-        whereClause.appointmentDate.gte = new Date(startDate).toISOString();
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        dateFilter.startDate = start;
       }
       if (endDate) {
-        whereClause.appointmentDate.lte = new Date(endDate).toISOString();
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.endDate = end;
+      }
+    }
+
+    // Tarih filtresini whereClause'a ekle
+    if (dateFilter && (dateFilter.startDate || dateFilter.endDate)) {
+      whereClause.appointmentDate = {};
+      if (dateFilter.startDate) {
+        whereClause.appointmentDate.gte = dateFilter.startDate;
+      }
+      if (dateFilter.endDate) {
+        whereClause.appointmentDate.lte = dateFilter.endDate;
       }
     }
 
@@ -651,7 +761,8 @@ export const getAllAppointments = async (req, res) => {
       })
     ]);
 
-    res.status(200).json({
+    // Response'a filtreleme bilgilerini ekle
+    const response = {
       success: true,
       data: appointments,
       pagination: {
@@ -659,8 +770,19 @@ export const getAllAppointments = async (req, res) => {
         limit: limit,
         total: total,
         pages: Math.ceil(total / limit)
+      },
+      filters: {
+        period: period || null,
+        status: status || null,
+        staffId: staffId ? parseInt(staffId) : null,
+        dateRange: dateFilter ? {
+          startDate: dateFilter.startDate?.toISOString().split('T')[0],
+          endDate: dateFilter.endDate?.toISOString().split('T')[0]
+        } : null
       }
-    });
+    };
+
+    res.status(200).json(response);
 
   } catch (error) {
     console.error('Randevu listeleme hatası:', error);
