@@ -186,33 +186,161 @@ const updateAccount = catchAsync(async (req, res, next) => {
     phone, 
     businessType, 
     subscriptionPlan,
-    isActive 
+    isActive,
+    // Owner kullanıcı bilgileri
+    ownerUsername,
+    ownerEmail,
+    ownerPassword,
+    ownerPhone
   } = req.body;
   
   const account = await prisma.accounts.findUnique({
-    where: { id: parseInt(id) }
+    where: { id: parseInt(id) },
+    include: {
+      users: {
+        where: { role: 'OWNER' },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          phone: true
+        }
+      }
+    }
   });
   
   if (!account) {
     return next(new AppError('İşletme hesabı bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
   }
+
+  // Owner kullanıcıyı bul
+  const owner = account.users.find(user => user);
   
-  const updatedAccount = await prisma.accounts.update({
-    where: { id: parseInt(id) },
-    data: {
-      ...(businessName && { businessName }),
-      ...(contactPerson && { contactPerson }),
-      ...(email && { email }),
-      ...(phone && { phone }),
-      ...(businessType && { businessType }),
-      ...(subscriptionPlan && { subscriptionPlan }),
-      ...(isActive !== undefined && { isActive })
+  // Email kontrolü - işletme email'i
+  if (email && email !== account.email) {
+    const existingAccount = await prisma.accounts.findFirst({
+      where: {
+        email: email,
+        id: { not: parseInt(id) }
+      }
+    });
+    
+    if (existingAccount) {
+      return next(new AppError('Bu işletme email adresi başka bir hesap tarafından kullanılıyor', 400, ErrorCodes.DB_DUPLICATE_ENTRY));
     }
+  }
+
+  // Owner email kontrolü
+  if (ownerEmail && owner && ownerEmail !== owner.email) {
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        email: ownerEmail,
+        id: { not: owner.id }
+      }
+    });
+    
+    if (existingUser) {
+      return next(new AppError('Bu kullanıcı email adresi başka bir kullanıcı tarafından kullanılıyor', 400, ErrorCodes.USER_ALREADY_EXISTS));
+    }
+  }
+
+  // Validasyonlar
+  if (businessName && businessName.trim().length < 2) {
+    return next(new AppError('İşletme adı en az 2 karakter olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  if (email && !email.includes('@')) {
+    return next(new AppError('Geçerli bir işletme email adresi giriniz', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  if (ownerEmail && !ownerEmail.includes('@')) {
+    return next(new AppError('Geçerli bir kullanıcı email adresi giriniz', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  if (ownerUsername && ownerUsername.trim().length < 3) {
+    return next(new AppError('Kullanıcı adı en az 3 karakter olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  if (ownerPassword && ownerPassword.length < 6) {
+    return next(new AppError('Şifre en az 6 karakter olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  // Telefon numarası validasyonu
+  const validatePhone = (phoneNumber, fieldName) => {
+    if (phoneNumber && phoneNumber !== null) {
+      const phoneRegex = /^[0-9\s\-\+\(\)]+$/;
+      const cleanPhone = phoneNumber.replace(/\s/g, '');
+      
+      if (!phoneRegex.test(phoneNumber)) {
+        return next(new AppError(`${fieldName} sadece rakam, boşluk, tire, artı ve parantez içerebilir`, 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+      }
+      
+      if (cleanPhone.length < 10 || cleanPhone.length > 15) {
+        return next(new AppError(`${fieldName} 10-15 rakam arasında olmalıdır`, 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+      }
+    }
+  };
+
+  validatePhone(phone, 'İşletme telefon numarası');
+  validatePhone(ownerPhone, 'Kullanıcı telefon numarası');
+
+  // Transaction ile güncelleme
+  const result = await prisma.$transaction(async (tx) => {
+    // İşletme bilgilerini güncelle
+    const updatedAccount = await tx.accounts.update({
+      where: { id: parseInt(id) },
+      data: {
+        ...(businessName && { businessName: businessName.trim() }),
+        ...(contactPerson !== undefined && { contactPerson: contactPerson ? contactPerson.trim() : null }),
+        ...(email && { email: email.trim().toLowerCase() }),
+        ...(phone !== undefined && { phone: phone ? phone.trim() : null }),
+        ...(businessType && { businessType }),
+        ...(subscriptionPlan !== undefined && { subscriptionPlan }),
+        ...(isActive !== undefined && { isActive })
+      }
+    });
+
+    let updatedOwner = null;
+
+    // Owner kullanıcı bilgilerini güncelle (eğer owner varsa ve güncellenecek bilgi varsa)
+    if (owner && (ownerUsername || ownerEmail || ownerPassword || ownerPhone !== undefined)) {
+      const ownerUpdateData = {};
+      
+      if (ownerUsername) ownerUpdateData.username = ownerUsername.trim();
+      if (ownerEmail) ownerUpdateData.email = ownerEmail.trim().toLowerCase();
+      if (ownerPhone !== undefined) ownerUpdateData.phone = ownerPhone ? ownerPhone.trim() : null;
+      
+      // Şifre varsa hash'le
+      if (ownerPassword) {
+        ownerUpdateData.password = await bcrypt.hash(ownerPassword, 12);
+      }
+
+      if (Object.keys(ownerUpdateData).length > 0) {
+        updatedOwner = await tx.user.update({
+          where: { id: owner.id },
+          data: ownerUpdateData,
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            phone: true,
+            role: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        });
+      }
+    }
+
+    return { account: updatedAccount, owner: updatedOwner };
   });
   
   res.json({
     status: 'success',
-    data: updatedAccount,
+    data: {
+      account: result.account,
+      ...(result.owner && { owner: result.owner })
+    },
     message: 'İşletme hesabı başarıyla güncellendi'
   });
 });
