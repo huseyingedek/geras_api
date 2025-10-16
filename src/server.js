@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import app from './app.js';
 import prisma, { checkDatabaseConnection } from './lib/prisma.js';
+import { startReminderService } from './services/reminderService.js';
 
 dotenv.config();
 
@@ -38,6 +39,9 @@ async function startServer() {
     server.headersTimeout = 65 * 1000; // 65 seconds
     
     console.log('✅ Database connection established with Neon PostgreSQL');
+    
+    // 🔔 Hatırlatma servisini başlat
+    startReminderService();
     
     return server;
     

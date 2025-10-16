@@ -252,6 +252,13 @@ export const prepareAppointmentReminderSMS = (appointmentData) => {
   } = appointmentData;
 
   const date = new Date(appointmentDate);
+  const formattedDate = date.toLocaleDateString('tr-TR', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+  
   const formattedTime = date.toLocaleTimeString('tr-TR', {
     hour: '2-digit',
     minute: '2-digit'
@@ -261,9 +268,9 @@ export const prepareAppointmentReminderSMS = (appointmentData) => {
 
 ${businessName}'den bilgilendirme:
 
-Randevunuz hatırlatması.
+Randevu hatırlatması.
 
-Yarın randevunuz:
+${formattedDate} günü randevunuz:
 Saat: ${formattedTime}
 Hizmet: ${serviceName}
 Personel: ${staffName}

@@ -211,6 +211,20 @@ export const createQuickAppointment = async (req, res) => {
         }
       });
 
+      // Hatırlatma zamanını hesapla
+      const account = await tx.accounts.findUnique({
+        where: { id: accountId },
+        select: { reminderHours: true }
+      });
+      const reminderHours = account?.reminderHours ?? 24;
+      const appointmentTime = new Date(appointmentDate);
+      const reminderTime = new Date(appointmentTime.getTime() - (reminderHours * 60 * 60 * 1000));
+      const now = new Date();
+      
+      // Eğer hatırlatma zamanı zaten geçmişse veya 2 saat içindeyse, reminderSentAt doldur
+      const hoursUntilReminder = (reminderTime.getTime() - now.getTime()) / (60 * 60 * 1000);
+      const shouldMarkAsSent = hoursUntilReminder <= 2;
+
       const appointment = await tx.appointments.create({
         data: {
           accountId: accountId,
@@ -220,7 +234,8 @@ export const createQuickAppointment = async (req, res) => {
           staffId: staffId,
           saleId: sale.id,
           appointmentDate: new Date(appointmentDate).toISOString(),
-          notes: notes || null
+          notes: notes || null,
+          reminderSentAt: shouldMarkAsSent ? new Date() : null // Hatırlatma çok yakınsa doldur
         }
       });
 
@@ -275,24 +290,31 @@ export const createQuickAppointment = async (req, res) => {
     // ✅ SMS BİLDİRİMİ GÖNDER (telefon numarası varsa)
     if (phone) {
       try {
+        // SMS gönderme kontrolü (sadece işletme ayarları)
         const account = await prisma.accounts.findUnique({
           where: { id: accountId },
-          select: { businessName: true }
+          select: { smsEnabled: true, businessName: true }
         });
+        
+        if (account?.smsEnabled) {
+          const smsData = {
+            customerName: `${firstName} ${lastName}`,
+            serviceName: service.serviceName,
+            appointmentDate: appointmentDate,
+            staffName: staff.fullName,
+            businessName: account?.businessName || 'Bizim Işletme'
+          };
 
-        const smsData = {
-          customerName: `${firstName} ${lastName}`,
-          serviceName: service.serviceName,
-          appointmentDate: appointmentDate,
-          staffName: staff.fullName,
-          businessName: account?.businessName || 'Bizim Işletme'
-        };
+          const smsMessage = prepareAppointmentSMS(smsData);
+          const smsResult = await sendSMS(phone, smsMessage);
 
-        const smsMessage = prepareAppointmentSMS(smsData);
-        const smsResult = await sendSMS(phone, smsMessage);
-
-        if (!smsResult.success) {
-          console.error('❌ SMS gönderme hatası:', smsResult.error);
+          if (smsResult.success) {
+            console.log('✅ Randevu SMS başarıyla gönderildi:', smsResult.messageId);
+          } else {
+            console.error('❌ SMS gönderme hatası:', smsResult.error);
+          }
+        } else {
+          console.log('ℹ️ SMS gönderilmedi: İşletme SMS servisi kapalı');
         }
       } catch (smsError) {
         console.error('❌ SMS gönderme işlemi hatası:', smsError);
@@ -479,6 +501,20 @@ export const createAppointment = async (req, res) => {
       }
     }
 
+    // Hatırlatma zamanını hesapla
+    const account = await prisma.accounts.findUnique({
+      where: { id: accountId },
+      select: { reminderHours: true }
+    });
+    const reminderHours = account?.reminderHours ?? 24;
+    const appointmentTime = new Date(appointmentDate);
+    const reminderTime = new Date(appointmentTime.getTime() - (reminderHours * 60 * 60 * 1000));
+    const now = new Date();
+    
+    // Eğer hatırlatma zamanı zaten geçmişse veya 2 saat içindeyse, reminderSentAt doldur
+    const hoursUntilReminder = (reminderTime.getTime() - now.getTime()) / (60 * 60 * 1000);
+    const shouldMarkAsSent = hoursUntilReminder <= 2;
+
     // ✅ RANDEVU OLUŞTUR (SEANS AZALTMADAN)
     const appointment = await prisma.appointments.create({
       data: {
@@ -489,7 +525,8 @@ export const createAppointment = async (req, res) => {
         staffId: staffId,
         saleId: saleId,
         appointmentDate: new Date(appointmentDate).toISOString(),
-        notes: notes || null
+        notes: notes || null,
+        reminderSentAt: shouldMarkAsSent ? new Date() : null // Hatırlatma çok yakınsa doldur
       },
       include: {
         client: {
@@ -533,24 +570,31 @@ export const createAppointment = async (req, res) => {
     // ✅ SMS BİLDİRİMİ GÖNDER (telefon numarası varsa)
     if (appointment.client?.phone) {
       try {
+        // SMS gönderme kontrolü (sadece işletme ayarları)
         const account = await prisma.accounts.findUnique({
           where: { id: accountId },
-          select: { businessName: true }
+          select: { smsEnabled: true, businessName: true }
         });
+        
+        if (account?.smsEnabled) {
+          const smsData = {
+            customerName: `${appointment.client.firstName} ${appointment.client.lastName}`,
+            serviceName: appointment.service.serviceName,
+            appointmentDate: appointmentDate,
+            staffName: appointment.staff.fullName,
+            businessName: account?.businessName || 'Bizim Işletme'
+          };
 
-        const smsData = {
-          customerName: `${appointment.client.firstName} ${appointment.client.lastName}`,
-          serviceName: appointment.service.serviceName,
-          appointmentDate: appointmentDate,
-          staffName: appointment.staff.fullName,
-          businessName: account?.businessName || 'Bizim Işletme'
-        };
+          const smsMessage = prepareAppointmentSMS(smsData);
+          const smsResult = await sendSMS(appointment.client.phone, smsMessage);
 
-        const smsMessage = prepareAppointmentSMS(smsData);
-        const smsResult = await sendSMS(appointment.client.phone, smsMessage);
-
-        if (!smsResult.success) {
-          console.error('❌ SMS gönderme hatası:', smsResult.error);
+          if (smsResult.success) {
+            console.log('✅ Randevu SMS başarıyla gönderildi:', smsResult.messageId);
+          } else {
+            console.error('❌ SMS gönderme hatası:', smsResult.error);
+          }
+        } else {
+          console.log('ℹ️ SMS gönderilmedi: İşletme SMS servisi kapalı');
         }
       } catch (smsError) {
         console.error('❌ SMS gönderme işlemi hatası:', smsError);
@@ -880,16 +924,23 @@ export const updateAppointment = async (req, res) => {
     // ✅ TRANSACTION İLE GÜNCELLEME
     const result = await prisma.$transaction(async (tx) => {
       // 1. Randevuyu güncelle
+      const updateData = {
+        staffId: staffId || existingAppointment.staffId,
+        appointmentDate: appointmentDate ? new Date(appointmentDate).toISOString() : existingAppointment.appointmentDate,
+        status: newStatus,
+        notes: notes !== undefined ? notes : existingAppointment.notes
+      };
+
+      // Randevu tarihi değiştiriliyorsa hatırlatma kaydını sıfırla (yeni hatırlatma gönderebilmek için)
+      if (appointmentDate && new Date(appointmentDate).getTime() !== existingAppointment.appointmentDate.getTime()) {
+        updateData.reminderSentAt = null;
+      }
+
       const updatedAppointment = await tx.appointments.update({
         where: {
           id: parseInt(id)
         },
-        data: {
-          staffId: staffId || existingAppointment.staffId,
-          appointmentDate: appointmentDate ? new Date(appointmentDate).toISOString() : existingAppointment.appointmentDate,
-          status: newStatus,
-          notes: notes !== undefined ? notes : existingAppointment.notes
-        },
+        data: updateData,
         include: {
           client: {
             select: {
@@ -977,24 +1028,31 @@ export const updateAppointment = async (req, res) => {
     // ✅ RANDEVU İPTAL EDİLDİĞİNDE SMS BİLDİRİMİ GÖNDER
     if (newStatus === 'CANCELLED' && oldStatus !== 'CANCELLED' && result.client?.phone) {
       try {
+        // SMS gönderme kontrolü (sadece işletme ayarları)
         const account = await prisma.accounts.findUnique({
           where: { id: accountId },
-          select: { businessName: true }
+          select: { smsEnabled: true, businessName: true }
         });
+        
+        if (account?.smsEnabled) {
+          const smsData = {
+            customerName: `${result.client.firstName} ${result.client.lastName}`,
+            serviceName: result.service.serviceName,
+            appointmentDate: result.appointmentDate,
+            businessName: account.businessName
+          };
 
-        const smsData = {
-          customerName: `${result.client.firstName} ${result.client.lastName}`,
-          serviceName: result.service.serviceName,
-          appointmentDate: result.appointmentDate,
-          businessName: account?.businessName || 'Bizim Işletme'
-        };
+          const smsMessage = prepareAppointmentCancelSMS(smsData);
+          const smsResult = await sendSMS(result.client.phone, smsMessage);
 
-        const smsMessage = prepareAppointmentCancelSMS(smsData);
-        const smsResult = await sendSMS(result.client.phone, smsMessage);
-
-                  if (!smsResult.success) {
+          if (smsResult.success) {
+            console.log('✅ Randevu iptal SMS başarıyla gönderildi:', smsResult.messageId);
+          } else {
             console.error('❌ Randevu iptal SMS hatası:', smsResult.error);
           }
+        } else {
+          console.log('ℹ️ İptal SMS gönderilmedi: İşletme SMS servisi kapalı');
+        }
       } catch (smsError) {
         console.error('❌ SMS gönderme işlemi hatası:', smsError);
         // SMS hatası güncelleme işlemini engellemez
@@ -1103,6 +1161,7 @@ export const deleteAppointment = async (req, res) => {
       });
     }
 
+    // ✅ RANDEVU SİLİNDİĞİNDE SMS BİLDİRİMİ GÖNDER (sadece PLANNED veya COMPLETED ise)
     if ((existingAppointment.status === 'PLANNED' || existingAppointment.status === 'COMPLETED')) {
       const clientInfo = await prisma.clients.findUnique({
         where: { id: existingAppointment.clientId },
@@ -1122,26 +1181,34 @@ export const deleteAppointment = async (req, res) => {
 
       if (clientInfo?.phone) {
         try {
+          // SMS gönderme kontrolü (sadece işletme ayarları)
           const account = await prisma.accounts.findUnique({
             where: { id: accountId },
-            select: { businessName: true }
+            select: { smsEnabled: true, businessName: true }
           });
 
-          const smsData = {
-            customerName: `${clientInfo.firstName} ${clientInfo.lastName}`,
-            serviceName: serviceInfo?.serviceName || 'Hizmet',
-            appointmentDate: existingAppointment.appointmentDate,
-            businessName: account?.businessName || 'Bizim Işletme'
-          };
+          if (account?.smsEnabled) {
+            const smsData = {
+              customerName: `${clientInfo.firstName} ${clientInfo.lastName}`,
+              serviceName: serviceInfo?.serviceName || 'Hizmet',
+              appointmentDate: existingAppointment.appointmentDate,
+              businessName: account.businessName
+            };
 
-          const smsMessage = prepareAppointmentCancelSMS(smsData);
-          const smsResult = await sendSMS(clientInfo.phone, smsMessage);
+            const smsMessage = prepareAppointmentCancelSMS(smsData);
+            const smsResult = await sendSMS(clientInfo.phone, smsMessage);
 
-          if (!smsResult.success) {
-            console.error('❌ Randevu silme SMS hatası:', smsResult.error);
+            if (smsResult.success) {
+              console.log('✅ Randevu silme SMS başarıyla gönderildi:', smsResult.messageId);
+            } else {
+              console.error('❌ Randevu silme SMS hatası:', smsResult.error);
+            }
+          } else {
+            console.log('ℹ️ Silme SMS gönderilmedi: İşletme SMS servisi kapalı');
           }
         } catch (smsError) {
           console.error('❌ SMS gönderme işlemi hatası:', smsError);
+          // SMS hatası silme işlemini engellemez
         }
       }
     }

@@ -24,6 +24,9 @@ model Accounts {
   createdAt        DateTime       @default(now()) @map("CreatedAt")
   updatedAt        DateTime       @default(now()) @updatedAt @map("UpdatedAt")
   isActive         Boolean        @default(true) @map("IsActive")
+  smsEnabled       Boolean        @default(true) @map("SMSEnabled")  // İşletme SMS kontrolü
+  reminderEnabled  Boolean        @default(true) @map("ReminderEnabled")  // Randevu hatırlatma açık mı?
+  reminderHours    Int            @default(24) @map("ReminderHours")  // Kaç saat önceden hatırlatma?
   appointments     Appointments[]
   clients          Clients[]
   sales            Sales[]        // Direkt satış ilişkisi güvenlik için
@@ -50,6 +53,7 @@ model Appointments {
   appointmentDate DateTime          @map("AppointmentDate")
   status          AppointmentStatus @default(PLANNED) @map("Status")
   notes           String?           @map("Notes") @db.Text
+  reminderSentAt  DateTime?         @map("ReminderSentAt")  // Hatırlatma SMS gönderilme zamanı
   createdAt       DateTime          @default(now()) @map("CreatedAt")
   updatedAt       DateTime          @default(now()) @updatedAt @map("UpdatedAt")
   account         Accounts          @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -87,6 +91,7 @@ model Sales {
   totalAmount       Decimal        @map("TotalAmount") @db.Decimal(10, 2)
   remainingSessions Int            @map("RemainingSessions")
   isDeleted         Boolean        @default(false) @map("IsDeleted")  // Soft delete için
+  notes             String?        @map("Notes") @db.Text  // Satış notu
   createdAt         DateTime       @default(now()) @map("CreatedAt")
   updatedAt         DateTime       @default(now()) @updatedAt @map("UpdatedAt")
   payments          Payments[]
@@ -306,6 +311,8 @@ model NotificationSetting {
   emailEnabled     Boolean           @default(true) @map("EmailEnabled")
   pushEnabled      Boolean           @default(true) @map("PushEnabled")
   smsEnabled       Boolean           @default(false) @map("SMSEnabled")
+  reminderEnabled  Boolean           @default(false) @map("ReminderEnabled")  // Hatırlatma açık mı?
+  reminderHours    Int               @default(24) @map("ReminderHours")       // Kaç saat önceden?
   createdAt        DateTime          @default(now()) @map("CreatedAt")
   updatedAt        DateTime          @default(now()) @updatedAt @map("UpdatedAt")
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)

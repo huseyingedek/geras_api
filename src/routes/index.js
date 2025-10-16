@@ -7,6 +7,7 @@ import clientRoutes from './clientRoutes.js';
 import salesRoutes from './salesRoutes.js';
 import appointmentRoutes from './appointmentRoutes.js';
 import dashboardRoutes from './dashboardRoutes.js';
+import notificationRoutes from './notificationRoutes.js';
 
 const router = express.Router();
 
@@ -22,5 +23,6 @@ router.use('/clients', clientRoutes);
 router.use('/sales', salesRoutes);
 router.use('/appointments', appointmentRoutes);
 router.use('/dashboard', dashboardRoutes);
+router.use('/notifications', notificationRoutes);
 
 export default router; 

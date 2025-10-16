@@ -62,6 +62,9 @@ const createAccount = catchAsync(async (req, res, next) => {
         businessType: businessType || 'SESSION_BASED',
         subscriptionPlan,
         isActive: true,
+        smsEnabled: true, // SMS servisi varsayılan açık
+        reminderEnabled: true, // Hatırlatma varsayılan açık
+        reminderHours: 24 // 1 gün önceden varsayılan
       }
     });
     

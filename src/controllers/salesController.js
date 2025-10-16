@@ -416,7 +416,8 @@ export const createSale = async (req, res) => {
         serviceId: serviceId,
         saleDate: finalSaleDate,
         totalAmount: finalTotalAmount,
-        remainingSessions: finalSessions
+        remainingSessions: finalSessions,
+        notes: notes || null
       },
       include: {
         client: {
@@ -592,7 +593,8 @@ export const updateSale = async (req, res) => {
     const updateData = {
       serviceId: serviceId || existingSale.serviceId,
       totalAmount: totalAmount || existingSale.totalAmount,
-      remainingSessions: remainingSessions !== undefined ? remainingSessions : existingSale.remainingSessions
+      remainingSessions: remainingSessions !== undefined ? remainingSessions : existingSale.remainingSessions,
+      notes: notes !== undefined ? notes : existingSale.notes
     };
 
     const updatedSale = await prisma.sales.update({
