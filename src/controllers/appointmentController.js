@@ -382,20 +382,18 @@ export const createAppointment = async (req, res) => {
       });
     }
 
-    // ✅ MEVCUT RANDEVU SAYISI KONTROLÜ
-    const existingAppointments = await prisma.appointments.count({
+    // ✅ MEVCUT PLANLANMIŞ RANDEVU SAYISI KONTROLÜ (sadece PLANNED olanlar sayılır)
+    const existingPlannedAppointments = await prisma.appointments.count({
       where: {
         saleId: saleId,
-        status: {
-          not: 'CANCELLED'
-        }
+        status: 'PLANNED' // Sadece planlanmış randevular sayılır
       }
     });
 
-    if (existingAppointments >= sale.remainingSessions) {
+    if (existingPlannedAppointments >= sale.remainingSessions) {
       return res.status(400).json({
         success: false,
-        message: `Bu satış için maksimum ${sale.remainingSessions} randevu oluşturulabilir. Mevcut randevu sayısı: ${existingAppointments}`
+        message: `Bu satış için maksimum ${sale.remainingSessions} randevu oluşturulabilir. Mevcut planlanmış randevu sayısı: ${existingPlannedAppointments}`
       });
     }
 

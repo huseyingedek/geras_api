@@ -15,42 +15,9 @@ dotenv.config();
 
 const app = express();
 
-// 🚀 Professional CORS configuration
+// 🚀 CORS configuration - ŞU AN TÜM ORIGIN'LERE AÇIK (DEVELOPMENT)
 const corsOptions = {
-  origin: function (origin, callback) {
-    // Production ve development için farklı allowed origins
-    const allowedOrigins = process.env.NODE_ENV === 'production' 
-      ? (process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [
-          'https://wisorsoft.xyz',
-          'https://www.wisorsoft.xyz',
-          'https://geras-client-rose.vercel.app',
-          'https://app.gerasonline.com',
-          'https://gerasonline.com',
-          'https://www.gerasonline.com'
-        ])
-      : [
-          'https://wisorsoft.xyz',
-          'https://www.wisorsoft.xyz', 
-          'https://geras-client-rose.vercel.app',
-          'https://app.gerasonline.com',
-          'https://gerasonline.com',
-          'https://www.gerasonline.com',
-          'http://localhost:3000',
-          'http://localhost:3001',
-          'http://localhost:5173',
-          'http://127.0.0.1:3000',
-          'http://127.0.0.1:5173'
-        ];
-    
-
-    
-    // Origin kontrolü - undefined origin'lere izin ver (Postman, mobile apps, etc.)
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('CORS policy violation: Origin not allowed'), false);
-    }
-  },
+  origin: true, // TÜM ORIGIN'LERE İZİN VER
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
     'Origin', 
@@ -62,8 +29,8 @@ const corsOptions = {
     'Pragma'
   ],
   credentials: true,
-  optionsSuccessStatus: 200, // IE11 için
-  maxAge: 86400 // 24 saat preflight cache
+  optionsSuccessStatus: 200,
+  maxAge: 86400
 };
 
 // 🚀 Professional Middleware Stack
