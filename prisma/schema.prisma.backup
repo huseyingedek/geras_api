@@ -1,0 +1,379 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// İşletme tipleri enum'ı
+enum BusinessType {
+  SESSION_BASED    @map("SessionBased")    // Seanslı işlemler yapan işletme
+  NON_SESSION_BASED @map("NonSessionBased") // Seanssız işlemler yapan işletme
+}
+
+model Accounts {
+  id               Int            @id @default(autoincrement()) @map("AccountID")
+  businessName     String         @map("BusinessName")
+  contactPerson    String?        @map("ContactPerson")
+  email            String?        @unique @map("Email")
+  phone            String?        @map("Phone")
+  businessType     BusinessType   @default(SESSION_BASED) @map("BusinessType")
+  subscriptionPlan String?        @map("SubscriptionPlan")
+  createdAt        DateTime       @default(now()) @map("CreatedAt")
+  updatedAt        DateTime       @default(now()) @updatedAt @map("UpdatedAt")
+  isActive         Boolean        @default(true) @map("IsActive")
+  smsEnabled       Boolean        @default(true) @map("SMSEnabled")  // İşletme SMS kontrolü
+  reminderEnabled  Boolean        @default(true) @map("ReminderEnabled")  // Randevu hatırlatma açık mı?
+  reminderHours    Int            @default(24) @map("ReminderHours")  // Kaç saat önceden hatırlatma?
+  appointments     Appointments[]
+  clients          Clients[]
+  sales            Sales[]        // Direkt satış ilişkisi güvenlik için
+  services         Services[]
+  staff            Staff[]
+  users            User[]
+  permissions      Permission[]   // Eklendi: hesaba ait roller
+  notifications    Notification[]
+  notificationSettings NotificationSetting[]
+  reports          Report[]
+  reportTemplates  ReportTemplate[]
+
+  @@map("Accounts")
+}
+
+model Appointments {
+  id              Int               @id @default(autoincrement()) @map("AppointmentID")
+  accountId       Int               @map("AccountID")
+  customerName    String            @map("CustomerName")
+  clientId        Int?              @map("ClientID")
+  serviceId       Int               @map("ServiceID")
+  staffId         Int               @map("StaffID")
+  saleId          Int?              @map("SaleID")  // Randevuyu satışa bağlamak için
+  appointmentDate DateTime          @map("AppointmentDate")
+  status          AppointmentStatus @default(PLANNED) @map("Status")
+  notes           String?           @map("Notes") @db.Text
+  reminderSentAt  DateTime?         @map("ReminderSentAt")  // Hatırlatma SMS gönderilme zamanı
+  createdAt       DateTime          @default(now()) @map("CreatedAt")
+  updatedAt       DateTime          @default(now()) @updatedAt @map("UpdatedAt")
+  account         Accounts          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  client          Clients?          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  service         Services          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  staff           Staff             @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  sale            Sales?            @relation(fields: [saleId], references: [id], onDelete: SetNull)
+
+  @@map("Appointments")
+}
+
+model Clients {
+  id           Int            @id @default(autoincrement()) @map("ClientID")
+  accountId    Int            @map("AccountID")
+  firstName    String         @map("FirstName")
+  lastName     String         @map("LastName")
+  phone        String?        @map("Phone")
+  email        String?        @map("Email")
+  isActive     Boolean        @default(true) @map("IsActive")
+  createdAt    DateTime       @default(now()) @map("CreatedAt")
+  updatedAt    DateTime       @default(now()) @updatedAt @map("UpdatedAt")
+  account      Accounts       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  sales        Sales[]
+  appointments Appointments[]
+
+  @@map("Clients")
+}
+
+model Sales {
+  id                Int            @id @default(autoincrement()) @map("SaleID")
+  accountId         Int            @map("AccountID")  // Direkt hesap ilişkisi güvenlik için
+  clientId          Int            @map("ClientID")
+  serviceId         Int            @map("ServiceID")
+  saleDate          DateTime       @default(now()) @map("SaleDate")
+  totalAmount       Decimal        @map("TotalAmount") @db.Decimal(10, 2)
+  remainingSessions Int            @map("RemainingSessions")
+  isDeleted         Boolean        @default(false) @map("IsDeleted")  // Soft delete için
+  notes             String?        @map("Notes") @db.Text  // Satış notu
+  createdAt         DateTime       @default(now()) @map("CreatedAt")
+  updatedAt         DateTime       @default(now()) @updatedAt @map("UpdatedAt")
+  payments          Payments[]
+  appointments      Appointments[] // Satışa bağlı randevular
+  account           Accounts       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  client            Clients        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  service           Services       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  sessions          Sessions[]
+
+  @@map("Sales")
+}
+
+model Payments {
+  id            Int           @id @default(autoincrement()) @map("PaymentID")
+  saleId        Int           @map("SaleID")
+  paymentDate   DateTime      @default(now()) @map("PaymentDate")
+  amountPaid    Decimal       @map("AmountPaid") @db.Decimal(10, 2)
+  paymentMethod PaymentMethod @default(CASH) @map("PaymentMethod")
+  status        PaymentStatus @default(PENDING) @map("Status")
+  notes         String?       @map("Notes") @db.Text
+  createdAt     DateTime      @default(now()) @map("CreatedAt")
+  updatedAt     DateTime      @default(now()) @updatedAt @map("UpdatedAt")
+  sale          Sales         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@map("Payments")
+}
+
+model Services {
+  id              Int            @id @default(autoincrement()) @map("ServiceID")
+  accountId       Int            @map("AccountID")
+  serviceName     String         @map("ServiceName")
+  description     String?        @map("Description") @db.Text
+  price           Decimal        @map("Price") @db.Decimal(10, 2)
+  durationMinutes Int?           @map("DurationMinutes")
+  isSessionBased  Boolean        @default(false) @map("IsSessionBased") // Seanslı hizmet mi?
+  sessionCount    Int            @default(1) @map("SessionCount") // Seanslı ise seans sayısı
+  isActive        Boolean        @default(true) @map("IsActive")
+  createdAt       DateTime       @default(now()) @map("CreatedAt")
+  updatedAt       DateTime       @default(now()) @updatedAt @map("UpdatedAt")
+  sales           Sales[]
+  appointments    Appointments[]
+  account         Accounts       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, serviceName])
+  @@map("Services")
+}
+
+model Sessions {
+  id          Int           @id @default(autoincrement()) @map("SessionID")
+  saleId      Int           @map("SaleID")
+  staffId     Int?          @map("StaffID")
+  sessionDate DateTime      @map("SessionDate")
+  status      SessionStatus @default(SCHEDULED) @map("Status")
+  notes       String?       @map("Notes") @db.Text
+  createdAt   DateTime      @default(now()) @map("CreatedAt")
+  updatedAt   DateTime      @default(now()) @updatedAt @map("UpdatedAt")
+  sale        Sales         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  staff       Staff?        @relation(fields: [staffId], references: [id], onDelete: SetNull)
+
+  @@map("Sessions")
+}
+
+model Staff {
+  id              Int                 @id @default(autoincrement()) @map("StaffID")
+  accountId       Int                 @map("AccountID")
+  fullName        String              @map("FullName")
+  role            String?             @map("Role")
+  phone           String?             @map("Phone")
+  email           String?             @map("Email")
+  isActive        Boolean             @default(true) @map("IsActive")
+  createdAt       DateTime            @default(now()) @map("CreatedAt")
+  updatedAt       DateTime            @default(now()) @updatedAt @map("UpdatedAt")
+  userId          Int?                @unique @map("UserID")  // User ile ilişki için eklendi
+  sessions        Sessions[]
+  appointments    Appointments[]
+  workingHours    WorkingHours[]
+  account         Accounts            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  staffPermissions StaffPermission[]  // Eklendi: personel izinleri ilişkisi
+  user            User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("Staff")
+}
+
+model WorkingHours {
+  id        Int       @id @default(autoincrement()) @map("WorkingHourID")
+  staffId   Int       @map("StaffID")
+  dayOfWeek Int       @map("DayOfWeek") // 0=Pazar, 1=Pazartesi, ... 6=Cumartesi
+  startTime DateTime  @map("StartTime") // Saat karşılaştırmaları için DateTime kullanıldı
+  endTime   DateTime  @map("EndTime")   // Saat karşılaştırmaları için DateTime kullanıldı
+  isWorking Boolean   @default(true) @map("IsWorking")
+  createdAt DateTime  @default(now()) @map("CreatedAt")
+  updatedAt DateTime  @default(now()) @updatedAt @map("UpdatedAt")
+  staff     Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, dayOfWeek])
+  @@map("WorkingHours")
+}
+
+model User {
+  id                Int                 @id @default(autoincrement())
+  username          String
+  email             String              @unique
+  password          String              // Password should be hashed at application level before storing
+  phone             String?
+  role              UserRole            @default(EMPLOYEE)
+  accountId         Int?
+  createdAt         DateTime            @default(now()) @map("CreatedAt")
+  updatedAt         DateTime            @default(now()) @updatedAt @map("UpdatedAt")
+  account           Accounts?           @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  notifications     Notification[]
+  notificationSettings NotificationSetting[]
+  reports           Report[]
+  staff             Staff?              // Staff ile ilişki eklendi
+
+  @@map("Users")
+}
+
+// Yeni eklenen izin tabloları
+model Permission {
+  id            Int               @id @default(autoincrement()) @map("PermissionID")
+  accountId     Int               @map("AccountID")
+  name          String            @map("Name")
+  description   String?           @map("Description") @db.Text
+  resource      String            @map("Resource")  // Örn: "clients", "appointments", "services"
+  createdAt     DateTime          @default(now()) @map("CreatedAt")
+  updatedAt     DateTime          @default(now()) @updatedAt @map("UpdatedAt")
+  account       Accounts          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  staffPermissions StaffPermission[]
+
+  @@unique([accountId, name, resource])
+  @@map("Permissions")
+}
+
+model StaffPermission {
+  id            Int         @id @default(autoincrement()) @map("StaffPermissionID")
+  staffId       Int         @map("StaffID")
+  permissionId  Int         @map("PermissionID")
+  canView       Boolean     @default(false) @map("CanView")
+  canCreate     Boolean     @default(false) @map("CanCreate")
+  canEdit       Boolean     @default(false) @map("CanEdit")
+  canDelete     Boolean     @default(false) @map("CanDelete")
+  createdAt     DateTime    @default(now()) @map("CreatedAt")
+  updatedAt     DateTime    @default(now()) @updatedAt @map("UpdatedAt")
+  staff         Staff       @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  permission    Permission  @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, permissionId])
+  @@map("StaffPermissions")
+}
+
+enum AppointmentStatus {
+  PLANNED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  CREDIT_CARD
+  TRANSFER
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum SessionStatus {
+  SCHEDULED
+  COMPLETED
+  MISSED
+}
+
+enum UserRole {
+  EMPLOYEE
+  OWNER
+  ADMIN
+}
+
+// Bildirim tipi enum'ı
+enum NotificationType {
+  APPOINTMENT  // Randevu bildirimleri
+  PAYMENT      // Ödeme bildirimleri
+  SESSION      // Seans bildirimleri
+  SYSTEM       // Sistem bildirimleri
+  MARKETING    // Pazarlama bildirimleri
+}
+
+// Bildirim tablosu
+model Notification {
+  id            Int               @id @default(autoincrement()) @map("NotificationID")
+  accountId     Int               @map("AccountID")
+  userId        Int?              @map("UserID")
+  title         String            @map("Title")
+  message       String            @map("Message") @db.Text
+  type          NotificationType  @default(SYSTEM) @map("Type")
+  isRead        Boolean           @default(false) @map("IsRead")
+  createdAt     DateTime          @default(now()) @map("CreatedAt")
+  updatedAt     DateTime          @default(now()) @updatedAt @map("UpdatedAt")
+  referenceId   Int?              @map("ReferenceID")
+  referenceType String?           @map("ReferenceType")
+  account       Accounts          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user          User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("Notifications")
+}
+
+// Bildirim Tercihleri
+model NotificationSetting {
+  id               Int               @id @default(autoincrement()) @map("SettingID")
+  userId           Int               @map("UserID")
+  accountId        Int               @map("AccountID")
+  notificationType NotificationType  @map("NotificationType")
+  emailEnabled     Boolean           @default(true) @map("EmailEnabled")
+  pushEnabled      Boolean           @default(true) @map("PushEnabled")
+  smsEnabled       Boolean           @default(false) @map("SMSEnabled")
+  reminderEnabled  Boolean           @default(false) @map("ReminderEnabled")  // Hatırlatma açık mı?
+  reminderHours    Int               @default(24) @map("ReminderHours")       // Kaç saat önceden?
+  createdAt        DateTime          @default(now()) @map("CreatedAt")
+  updatedAt        DateTime          @default(now()) @updatedAt @map("UpdatedAt")
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account          Accounts          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, accountId, notificationType])
+  @@map("NotificationSettings")
+}
+
+// Rapor tipi enum'ı
+enum ReportType {
+  SALES         // Satış raporları
+  APPOINTMENTS  // Randevu raporları
+  SESSIONS      // Seans raporları
+  CLIENTS       // Müşteri raporları
+  STAFF         // Personel raporları
+  FINANCIAL     // Finansal raporlar
+  CUSTOM        // Özel raporlar
+}
+
+// Rapor durumu enum'ı
+enum ReportStatus {
+  PENDING    // İşleniyor
+  COMPLETED  // Tamamlandı
+  FAILED     // Başarısız
+}
+
+// Rapor tablosu
+model Report {
+  id            Int            @id @default(autoincrement()) @map("ReportID")
+  accountId     Int            @map("AccountID")
+  name          String         @map("Name")
+  type          ReportType     @default(SALES) @map("Type")
+  parameters    String?        @map("Parameters") @db.Text
+  createdBy     Int?           @map("CreatedBy") // nullable yapıldı
+  createdAt     DateTime       @default(now()) @map("CreatedAt")
+  updatedAt     DateTime       @default(now()) @updatedAt @map("UpdatedAt")
+  completedAt   DateTime?      @map("CompletedAt")
+  status        ReportStatus   @default(PENDING) @map("Status")
+  resultUrl     String?        @map("ResultURL") @db.Text
+  account       Accounts       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user          User?          @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@map("Reports")
+}
+
+// Rapor Şablonları
+model ReportTemplate {
+  id            Int            @id @default(autoincrement()) @map("TemplateID")
+  accountId     Int?           @map("AccountID") // Null ise sistem şablonu
+  name          String         @map("Name")
+  description   String?        @map("Description") @db.Text
+  type          ReportType     @map("Type")
+  parameters    String?        @map("Parameters") @db.Text // Gerekli parametreler JSON
+  query         String         @map("Query") @db.Text // Rapor sorgusu veya hesaplama mantığı
+  outputFormat  String         @default("PDF") @map("OutputFormat")
+  isActive      Boolean        @default(true) @map("IsActive")
+  isSystem      Boolean        @default(false) @map("IsSystem") // Sistem şablonu mu?
+  createdAt     DateTime       @default(now()) @map("CreatedAt")
+  updatedAt     DateTime       @default(now()) @updatedAt @map("UpdatedAt")
+  account       Accounts?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@map("ReportTemplates")
+}

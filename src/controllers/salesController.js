@@ -191,6 +191,13 @@ export const getAllSales = async (req, res) => {
             sessionDate: true,
             status: true
           }
+        },
+        reference_sources: {  // ✅ Referans bilgisi eklendi
+          select: {
+            id: true,
+            reference_type: true,
+            reference_name: true
+          }
         }
       },
       orderBy: {
@@ -303,7 +310,8 @@ export const createSale = async (req, res) => {
       requestedSessions,
       totalAmount,
       notes,
-      saleDate
+      saleDate,
+      reference_id  // ✅ Referans ID eklendi
     } = req.body;
 
     const account = await prisma.accounts.findUnique({
@@ -417,7 +425,8 @@ export const createSale = async (req, res) => {
         saleDate: finalSaleDate,
         totalAmount: finalTotalAmount,
         remainingSessions: finalSessions,
-        notes: notes || null
+        notes: notes || null,
+        reference_id: reference_id || null  // ✅ Referans eklendi (opsiyonel)
       },
       include: {
         client: {
@@ -436,6 +445,13 @@ export const createSale = async (req, res) => {
             price: true,
             isSessionBased: true,
             sessionCount: true
+          }
+        },
+        reference_sources: {  // ✅ Referans bilgisini de getir
+          select: {
+            id: true,
+            reference_type: true,
+            reference_name: true
           }
         }
       }
@@ -506,6 +522,14 @@ export const getSaleById = async (req, res) => {
               }
             }
           }
+        },
+        reference_sources: {
+          select: {
+            id: true,
+            reference_type: true,
+            reference_name: true,
+            notes: true
+          }
         }
       }
     });
@@ -547,7 +571,7 @@ export const updateSale = async (req, res) => {
   try {
     const { accountId } = req.user;
     const { id } = req.params;
-    const { serviceId, totalAmount, remainingSessions, notes } = req.body;
+    const { serviceId, totalAmount, remainingSessions, notes, reference_id } = req.body;  // ✅ reference_id eklendi
 
     const existingSale = await prisma.sales.findFirst({
       where: {
@@ -594,7 +618,8 @@ export const updateSale = async (req, res) => {
       serviceId: serviceId || existingSale.serviceId,
       totalAmount: totalAmount || existingSale.totalAmount,
       remainingSessions: remainingSessions !== undefined ? remainingSessions : existingSale.remainingSessions,
-      notes: notes !== undefined ? notes : existingSale.notes
+      notes: notes !== undefined ? notes : existingSale.notes,
+      reference_id: reference_id !== undefined ? reference_id : existingSale.reference_id  // ✅ Referans güncellenebilir
     };
 
     const updatedSale = await prisma.sales.update({

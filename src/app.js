@@ -15,9 +15,8 @@ dotenv.config();
 
 const app = express();
 
-// 🚀 CORS configuration - ŞU AN TÜM ORIGIN'LERE AÇIK (DEVELOPMENT)
 const corsOptions = {
-  origin: true, // TÜM ORIGIN'LERE İZİN VER
+  origin: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
     'Origin', 
@@ -33,19 +32,16 @@ const corsOptions = {
   maxAge: 86400
 };
 
-// 🚀 Professional Middleware Stack
 app.use((req, res, next) => {
 
   next();
 });
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '10mb' })); // Limit artırıldı
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// 🚀 Professional Security middleware
 app.use(helmet({
-  // CSP - Production'da daha sıkı, development'ta daha esnek
   contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
     directives: {
       defaultSrc: ["'self'"],
@@ -57,18 +53,16 @@ app.use(helmet({
       frameSrc: ["'none'"],
       objectSrc: ["'none'"]
     }
-  } : false, // Development'ta CSP kapalı
+  } : false,
 
-  crossOriginEmbedderPolicy: false, // API için false
+  crossOriginEmbedderPolicy: false,
 
-  // HSTS - Sadece production'da
   hsts: process.env.NODE_ENV === 'production' ? {
-    maxAge: 31536000, // 1 yıl
+    maxAge: 31536000,
     includeSubDomains: true,
     preload: true
   } : false,
 
-  // Diğer güvenlik headers
   noSniff: true,
   frameguard: { action: 'deny' },
   referrerPolicy: { policy: 'same-origin' }
@@ -78,7 +72,6 @@ app.use(xss());
 app.use(hpp());
 app.use(mongoSanitize());
 
-// 🚀 Health Check Endpoint
 app.get('/health', async (req, res) => {
   try {
     const dbHealth = await checkDatabaseConnection();
@@ -107,10 +100,8 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// 🚀 Routes
 app.use('/api', routes);
 
-// 🚀 Error handling - Professional order
 app.all('*', notFoundHandler);
 app.use(errorHandler);
 

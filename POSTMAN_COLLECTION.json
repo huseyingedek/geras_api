@@ -1,0 +1,340 @@
+{
+  "info": {
+    "name": "Geras API - Expense Management",
+    "description": "Gider Yönetimi API Koleksiyonu",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login - OWNER",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('token', jsonData.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"owner@example.com\",\n  \"password\": \"your_password\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "item": [
+        {
+          "name": "Get All Categories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "expenses", "categories"]
+            }
+          }
+        },
+        {
+          "name": "Create Category - Maaş",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoryName\": \"Maaş\",\n  \"description\": \"Personel maaş ödemeleri\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "expenses", "categories"]
+            }
+          }
+        },
+        {
+          "name": "Create Category - Kira",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoryName\": \"Kira\",\n  \"description\": \"Mağaza kira ödemesi\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "expenses", "categories"]
+            }
+          }
+        },
+        {
+          "name": "Create Category - Elektrik",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoryName\": \"Elektrik\",\n  \"description\": \"Elektrik fatura ödemeleri\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "expenses", "categories"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vendors",
+      "item": [
+        {
+          "name": "Get All Vendors",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses/vendors",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "expenses", "vendors"]
+            }
+          }
+        },
+        {
+          "name": "Create Vendor - ABC Gayrimenkul",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vendorName\": \"ABC Gayrimenkul\",\n  \"contactPerson\": \"Ahmet Yılmaz\",\n  \"phone\": \"0532 123 4567\",\n  \"email\": \"info@abcgayrimenkul.com\",\n  \"address\": \"İstanbul, Türkiye\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses/vendors",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "expenses", "vendors"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Expenses",
+      "item": [
+        {
+          "name": "Get All Expenses",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "expenses"]
+            }
+          }
+        },
+        {
+          "name": "Get Expenses - This Month",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses?period=thisMonth",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "expenses"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "thisMonth"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Expenses - Pending",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses?paymentStatus=pending",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "expenses"],
+              "query": [
+                {
+                  "key": "paymentStatus",
+                  "value": "pending"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Expense - Kira",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoryId\": 2,\n  \"amount\": 15000,\n  \"expenseType\": \"vendor\",\n  \"vendorId\": 1,\n  \"description\": \"Kasım 2025 mağaza kira ödemesi\",\n  \"expenseDate\": \"2025-11-01\",\n  \"paymentStatus\": \"paid\",\n  \"paidAmount\": 15000,\n  \"paymentDate\": \"2025-11-01\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "expenses"]
+            }
+          }
+        },
+        {
+          "name": "Update Expense",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentStatus\": \"paid\",\n  \"paidAmount\": 12000,\n  \"paymentDate\": \"2025-11-30\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "expenses", "1"]
+            }
+          }
+        },
+        {
+          "name": "Delete Expense",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "expenses", "1"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+

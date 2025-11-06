@@ -8,6 +8,8 @@ import salesRoutes from './salesRoutes.js';
 import appointmentRoutes from './appointmentRoutes.js';
 import dashboardRoutes from './dashboardRoutes.js';
 import notificationRoutes from './notificationRoutes.js';
+import expenseRoutes from './expenseRoutes.js';
+import referenceRoutes from './referenceRoutes.js';
 
 const router = express.Router();
 
@@ -24,5 +26,7 @@ router.use('/sales', salesRoutes);
 router.use('/appointments', appointmentRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/expenses', expenseRoutes);
+router.use('/references', referenceRoutes);
 
 export default router; 
