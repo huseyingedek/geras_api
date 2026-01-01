@@ -7,6 +7,14 @@ const router = express.Router();
 
 router.use(isAuthenticated);
 
+// Tek istekte satış + randevu oluşturma
+router.route('/with-appointment')
+  .post(
+    checkPermission('sales', 'create'),
+    checkPermission('appointments', 'create'),
+    salesController.createSaleWithAppointment
+  );
+
 router.route('/')
   .get(checkPermission('sales', 'view'), salesController.getAllSales)
   .post(checkPermission('sales', 'create'), salesController.createSale);

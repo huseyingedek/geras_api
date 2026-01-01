@@ -473,6 +473,325 @@ export const createSale = async (req, res) => {
   }
 };
 
+export const createSaleWithAppointment = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const {
+      clientId,
+      serviceId,
+      requestedSessions,
+      totalAmount,
+      notes,
+      saleDate,
+      reference_id,
+      appointment // { staffId, appointmentDate, notes }
+    } = req.body;
+
+    if (!clientId || !serviceId || !appointment?.staffId || !appointment?.appointmentDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Gerekli alanlar eksik: clientId, serviceId, appointment.staffId, appointment.appointmentDate'
+      });
+    }
+
+    const account = await prisma.accounts.findUnique({
+      where: { id: accountId }
+    });
+
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: 'İşletme bulunamadı'
+      });
+    }
+
+    const service = await prisma.services.findFirst({
+      where: {
+        id: serviceId,
+        accountId: accountId,
+        isActive: true
+      }
+    });
+
+    if (!service) {
+      return res.status(404).json({
+        success: false,
+        message: 'Hizmet bulunamadı'
+      });
+    }
+
+    const client = await prisma.clients.findFirst({
+      where: {
+        id: clientId,
+        accountId: accountId,
+        isActive: true
+      }
+    });
+
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: 'Müşteri bulunamadı'
+      });
+    }
+
+    const staff = await prisma.staff.findFirst({
+      where: {
+        id: appointment.staffId,
+        accountId: accountId,
+        isActive: true
+      },
+      include: {
+        workingHours: true
+      }
+    });
+
+    if (!staff) {
+      return res.status(404).json({
+        success: false,
+        message: 'Personel bulunamadı'
+      });
+    }
+
+    const finalSaleDate = saleDate ? new Date(saleDate) : new Date();
+    if (finalSaleDate > new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Satış tarihi gelecek bir tarih olamaz'
+      });
+    }
+
+    // Satış fiyatı / seans hesapları
+    let finalPrice;
+    let finalTotalAmount;
+    let finalSessions;
+
+    if (account.businessType === 'NON_SESSION_BASED') {
+      finalSessions = 1;
+      if (totalAmount !== undefined && totalAmount !== null) {
+        finalPrice = totalAmount;
+        finalTotalAmount = totalAmount;
+      } else {
+        finalPrice = service.price;
+        finalTotalAmount = service.price;
+      }
+    } else {
+      if (!requestedSessions || requestedSessions <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Seans/adet sayısı belirtilmelidir'
+        });
+      }
+
+      finalSessions = requestedSessions;
+
+      if (service.sessionCount > 1 && requestedSessions > service.sessionCount) {
+        return res.status(400).json({
+          success: false,
+          message: `Bu hizmet maksimum ${service.sessionCount} seans olarak satılabilir`
+        });
+      }
+
+      if (totalAmount !== undefined && totalAmount !== null) {
+        finalPrice = totalAmount;
+        finalTotalAmount = totalAmount;
+      } else {
+        finalPrice = service.sessionCount > 1
+          ? service.price
+          : calculatePrice(service, requestedSessions);
+        finalTotalAmount = finalPrice;
+      }
+    }
+
+    // Randevu tarih/saat validasyonu
+    const appointmentStart = new Date(appointment.appointmentDate);
+    const now = new Date();
+    if (appointmentStart <= now) {
+      return res.status(400).json({
+        success: false,
+        message: 'Geçmiş tarihe randevu oluşturulamaz'
+      });
+    }
+
+    const serviceDuration = service.durationMinutes || 60;
+    const appointmentEnd = new Date(appointmentStart.getTime() + (serviceDuration * 60000));
+    const dayOfWeek = appointmentStart.getDay();
+
+    const workingHour = staff.workingHours.find(wh => wh.dayOfWeek === dayOfWeek && wh.isWorking);
+    if (!workingHour) {
+      return res.status(400).json({
+        success: false,
+        message: 'Personel bu gün çalışmıyor'
+      });
+    }
+
+    const workStart = new Date(workingHour.startTime);
+    const workEnd = new Date(workingHour.endTime);
+    const appointmentHour = appointmentStart.getHours();
+    const appointmentMinute = appointmentStart.getMinutes();
+    const endHour = appointmentEnd.getHours();
+    const endMinute = appointmentEnd.getMinutes();
+    const workStartHour = workStart.getHours();
+    const workStartMinute = workStart.getMinutes();
+    const workEndHour = workEnd.getHours();
+    const workEndMinute = workEnd.getMinutes();
+
+    const appointmentTimeInMinutes = appointmentHour * 60 + appointmentMinute;
+    const endTimeInMinutes = endHour * 60 + endMinute;
+    const workStartInMinutes = workStartHour * 60 + workStartMinute;
+    const workEndInMinutes = workEndHour * 60 + workEndMinute;
+
+    if (appointmentTimeInMinutes < workStartInMinutes || endTimeInMinutes > workEndInMinutes) {
+      return res.status(400).json({
+        success: false,
+        message: `Randevu çalışma saatleri dışında. Çalışma saatleri: ${workStartHour.toString().padStart(2, '0')}:${workStartMinute.toString().padStart(2, '0')} - ${workEndHour.toString().padStart(2, '0')}:${workEndMinute.toString().padStart(2, '0')}`
+      });
+    }
+
+    const startOfDay = new Date(appointmentStart);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(appointmentStart);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const conflictingAppointments = await prisma.appointments.findMany({
+      where: {
+        staffId: appointment.staffId,
+        appointmentDate: {
+          gte: startOfDay,
+          lte: endOfDay
+        },
+        status: {
+          not: 'CANCELLED'
+        }
+      },
+      include: {
+        service: {
+          select: {
+            durationMinutes: true
+          }
+        }
+      }
+    });
+
+    for (const existing of conflictingAppointments) {
+      const existingStart = new Date(existing.appointmentDate);
+      const existingDuration = existing.service.durationMinutes || 60;
+      const existingEnd = new Date(existingStart.getTime() + (existingDuration * 60000));
+
+      if (
+        (appointmentStart >= existingStart && appointmentStart < existingEnd) ||
+        (appointmentEnd > existingStart && appointmentEnd <= existingEnd) ||
+        (appointmentStart <= existingStart && appointmentEnd >= existingEnd)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `Bu saatte çakışan randevu var: ${existingStart.getHours().toString().padStart(2, '0')}:${existingStart.getMinutes().toString().padStart(2, '0')} - ${existingEnd.getHours().toString().padStart(2, '0')}:${existingEnd.getMinutes().toString().padStart(2, '0')} (${existing.customerName})`
+        });
+      }
+    }
+
+    // Hatırlatma hesapla
+    const reminderHours = account?.reminderHours ?? 24;
+    const reminderTime = new Date(appointmentStart.getTime() - (reminderHours * 60 * 60 * 1000));
+    const hoursUntilReminder = (reminderTime.getTime() - now.getTime()) / (60 * 60 * 1000);
+    const shouldMarkAsSent = hoursUntilReminder <= 2;
+
+    // Tek transaction ile satış + randevu oluştur
+    const result = await prisma.$transaction(async (tx) => {
+      const sale = await tx.sales.create({
+        data: {
+          accountId: accountId,
+          clientId: clientId,
+          serviceId: serviceId,
+          saleDate: finalSaleDate,
+          totalAmount: finalTotalAmount,
+          remainingSessions: finalSessions,
+          notes: notes || null,
+          reference_id: reference_id || null
+        }
+      });
+
+      const appointmentRecord = await tx.appointments.create({
+        data: {
+          accountId: accountId,
+          customerName: `${client.firstName} ${client.lastName}`,
+          clientId: clientId,
+          serviceId: serviceId,
+          staffId: appointment.staffId,
+          saleId: sale.id,
+          appointmentDate: appointmentStart.toISOString(),
+          notes: appointment?.notes || null,
+          reminderSentAt: shouldMarkAsSent ? new Date() : null
+        }
+      });
+
+      return { sale, appointment: appointmentRecord };
+    });
+
+    const appointmentWithDetails = await prisma.appointments.findUnique({
+      where: { id: result.appointment.id },
+      include: {
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            email: true
+          }
+        },
+        service: {
+          select: {
+            id: true,
+            serviceName: true,
+            price: true,
+            durationMinutes: true,
+            isSessionBased: true,
+            sessionCount: true
+          }
+        },
+        staff: {
+          select: {
+            id: true,
+            fullName: true,
+            role: true
+          }
+        },
+        sale: {
+          include: {
+            payments: {
+              where: {
+                status: 'COMPLETED'
+              }
+            }
+          }
+        }
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Satış ve randevu başarıyla oluşturuldu',
+      data: {
+        sale: {
+          ...result.sale,
+          totalAmount: parseFloat(result.sale.totalAmount),
+          remainingSessions: result.sale.remainingSessions
+        },
+        appointment: appointmentWithDetails
+      }
+    });
+
+  } catch (error) {
+    console.error('Satış + randevu oluşturma hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Satış ve randevu oluşturulamadı',
+      error: error.message
+    });
+  }
+};
+
 export const getSaleById = async (req, res) => {
   try {
     const { accountId } = req.user;
