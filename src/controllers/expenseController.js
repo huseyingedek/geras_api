@@ -1,40 +1,40 @@
 import prisma from '../lib/prisma.js';
 
 // 📊 Tarih filtreleme helper fonksiyonu (sales controller ile uyumlu)
+// ✅ TIMEZONE FIX: UTC kullanarak tarih oluştur (Prisma uyumlu)
 const getDateRange = (period) => {
   const now = new Date();
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
+  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0));
   
   switch (period) {
     case 'today':
-      const todayEnd = new Date(today);
-      todayEnd.setHours(23, 59, 59, 999);
+      const todayEnd = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999));
       return {
         startDate: today,
         endDate: todayEnd
       };
     
     case 'yesterday':
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayEnd = new Date(yesterday);
-      yesterdayEnd.setHours(23, 59, 59, 999);
+      const yesterdayDate = new Date(now);
+      yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+      const yesterday = new Date(Date.UTC(yesterdayDate.getFullYear(), yesterdayDate.getMonth(), yesterdayDate.getDate(), 0, 0, 0, 0));
+      const yesterdayEnd = new Date(Date.UTC(yesterdayDate.getFullYear(), yesterdayDate.getMonth(), yesterdayDate.getDate(), 23, 59, 59, 999));
       return {
         startDate: yesterday,
         endDate: yesterdayEnd
       };
     
     case 'thisWeek':
-      const startOfWeek = new Date(today);
-      const dayOfWeek = startOfWeek.getDay();
+      const currentDate = new Date(now);
+      const dayOfWeek = currentDate.getDay();
       const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Pazartesi başlangıç
-      startOfWeek.setDate(startOfWeek.getDate() + diff);
-      startOfWeek.setHours(0, 0, 0, 0);
+      currentDate.setDate(currentDate.getDate() + diff);
       
-      const endOfWeek = new Date(startOfWeek);
-      endOfWeek.setDate(endOfWeek.getDate() + 6); // Pazar günü sonu
-      endOfWeek.setHours(23, 59, 59, 999);
+      const startOfWeek = new Date(Date.UTC(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 0, 0, 0, 0));
+      
+      const endWeekDate = new Date(currentDate);
+      endWeekDate.setDate(endWeekDate.getDate() + 6); // Pazar günü
+      const endOfWeek = new Date(Date.UTC(endWeekDate.getFullYear(), endWeekDate.getMonth(), endWeekDate.getDate(), 23, 59, 59, 999));
       
       return {
         startDate: startOfWeek,
@@ -42,11 +42,10 @@ const getDateRange = (period) => {
       };
     
     case 'thisMonth':
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      startOfMonth.setHours(0, 0, 0, 0);
+      const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0));
       
-      const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-      endOfMonth.setHours(23, 59, 59, 999);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const endOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), lastDay, 23, 59, 59, 999));
       
       return {
         startDate: startOfMonth,
@@ -80,16 +79,18 @@ export const getAllExpenses = async (req, res) => {
       // Hızlı tarih seçimleri (bugün, dün, bu hafta, bu ay)
       dateFilter = getDateRange(period);
     } else if (startDate || endDate) {
-      // Özel tarih aralığı
+      // ✅ TIMEZONE FIX: Özel tarih aralığı - UTC kullan (Prisma uyumlu)
       dateFilter = {};
       if (startDate) {
-        const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
+        // "2025-01-01" -> UTC Date object
+        const [year, month, day] = startDate.split('-').map(Number);
+        const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
         dateFilter.startDate = start;
       }
       if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
+        // "2025-01-31" -> UTC Date object (gün sonu)
+        const [year, month, day] = endDate.split('-').map(Number);
+        const end = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
         dateFilter.endDate = end;
       }
     }
@@ -291,12 +292,28 @@ export const createExpense = async (req, res) => {
       });
     }
 
+    // ✅ TIMEZONE FIX: UTC tarih oluşturma (Prisma uyumlu)
+    let expenseDateObj;
+    if (expenseDate) {
+      const [year, month, day] = expenseDate.split('-').map(Number);
+      expenseDateObj = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    } else {
+      const now = new Date();
+      expenseDateObj = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0));
+    }
+
+    let paymentDateObj = null;
+    if (paymentDate) {
+      const [year, month, day] = paymentDate.split('-').map(Number);
+      paymentDateObj = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    }
+
     // Gider oluştur
     const expense = await prisma.expenses.create({
       data: {
         AccountID: accountId,
         CategoryID: categoryId,
-        ExpenseDate: expenseDate ? new Date(expenseDate) : new Date(),
+        ExpenseDate: expenseDateObj,
         Amount: parseFloat(amount),
         CurrencyCode: currencyCode || 'TRY',
         Description: description || null,
@@ -305,7 +322,7 @@ export const createExpense = async (req, res) => {
         VendorID: vendorId || null,
         PaymentStatus: paymentStatus || 'pending',
         PaidAmount: paidAmount ? parseFloat(paidAmount) : 0,
-        PaymentDate: paymentDate ? new Date(paymentDate) : null
+        PaymentDate: paymentDateObj
       },
       include: {
         ExpenseCategories: true,
@@ -386,6 +403,19 @@ export const updateExpense = async (req, res) => {
       });
     }
 
+    // ✅ TIMEZONE FIX: UTC tarih güncelleme (Prisma uyumlu)
+    let expenseDateObj = expense.ExpenseDate;
+    if (updateData.expenseDate) {
+      const [year, month, day] = updateData.expenseDate.split('-').map(Number);
+      expenseDateObj = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    }
+
+    let paymentDateObj = expense.PaymentDate;
+    if (updateData.paymentDate) {
+      const [year, month, day] = updateData.paymentDate.split('-').map(Number);
+      paymentDateObj = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    }
+
     // Güncelle
     const updatedExpense = await prisma.expenses.update({
       where: {
@@ -393,7 +423,7 @@ export const updateExpense = async (req, res) => {
       },
       data: {
         CategoryID: updateData.categoryId || expense.CategoryID,
-        ExpenseDate: updateData.expenseDate ? new Date(updateData.expenseDate) : expense.ExpenseDate,
+        ExpenseDate: expenseDateObj,
         Amount: updateData.amount ? parseFloat(updateData.amount) : expense.Amount,
         CurrencyCode: updateData.currencyCode || expense.CurrencyCode,
         Description: updateData.description !== undefined ? updateData.description : expense.Description,
@@ -402,7 +432,7 @@ export const updateExpense = async (req, res) => {
         VendorID: updateData.vendorId !== undefined ? updateData.vendorId : expense.VendorID,
         PaymentStatus: updateData.paymentStatus || expense.PaymentStatus,
         PaidAmount: updateData.paidAmount !== undefined ? parseFloat(updateData.paidAmount) : expense.PaidAmount,
-        PaymentDate: updateData.paymentDate ? new Date(updateData.paymentDate) : expense.PaymentDate
+        PaymentDate: paymentDateObj
       },
       include: {
         ExpenseCategories: true,
@@ -918,7 +948,7 @@ export const getStaffExpenseReport = async (req, res) => {
     const { accountId } = req.user;
     const { period, startDate, endDate } = req.query;
 
-    // Tarih filtresi (diğer fonksiyonlarla uyumlu)
+    // ✅ TIMEZONE FIX: UTC tarih filtresi (Prisma uyumlu)
     let dateFilter = {};
     
     if (period && period !== 'custom') {
@@ -931,13 +961,15 @@ export const getStaffExpenseReport = async (req, res) => {
       }
     } else if (startDate || endDate) {
       if (startDate) {
-        const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
+        // "2025-01-01" -> UTC Date object
+        const [year, month, day] = startDate.split('-').map(Number);
+        const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
         dateFilter.gte = start;
       }
       if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
+        // "2025-01-31" -> UTC Date object (gün sonu)
+        const [year, month, day] = endDate.split('-').map(Number);
+        const end = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
         dateFilter.lte = end;
       }
     }
@@ -1031,7 +1063,7 @@ export const getVendorExpenseReport = async (req, res) => {
     const { accountId } = req.user;
     const { period, startDate, endDate, paymentStatus } = req.query;
 
-    // Tarih filtresi
+    // ✅ TIMEZONE FIX: UTC tarih filtresi (Prisma uyumlu)
     let dateFilter = {};
     
     if (period && period !== 'custom') {
@@ -1044,13 +1076,15 @@ export const getVendorExpenseReport = async (req, res) => {
       }
     } else if (startDate || endDate) {
       if (startDate) {
-        const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
+        // "2025-01-01" -> UTC Date object
+        const [year, month, day] = startDate.split('-').map(Number);
+        const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
         dateFilter.gte = start;
       }
       if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
+        // "2025-01-31" -> UTC Date object (gün sonu)
+        const [year, month, day] = endDate.split('-').map(Number);
+        const end = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
         dateFilter.lte = end;
       }
     }

@@ -117,7 +117,7 @@ export const createQuickAppointment = async (req, res) => {
           lte: endOfDay
         },
         status: {
-          not: 'CANCELLED'
+          notIn: ['CANCELLED', 'NO_SHOW']
         }
       },
       include: {
@@ -470,7 +470,7 @@ export const createAppointment = async (req, res) => {
           lte: endOfDay
         },
         status: {
-          not: 'CANCELLED'
+          notIn: ['CANCELLED', 'NO_SHOW']
         }
       },
       include: {
@@ -895,15 +895,15 @@ export const updateAppointment = async (req, res) => {
       // Tüm hizmetlerde seans yönetimi yap (session-based kontrolü kaldırıldı)
       if (existingAppointment.sale) {
         
-        // COMPLETED → PLANNED/CANCELLED: Seansı geri yükle
-        if (oldStatus === 'COMPLETED' && (newStatus === 'PLANNED' || newStatus === 'CANCELLED')) {
+        // COMPLETED → PLANNED/CANCELLED/NO_SHOW: Seansı geri yükle
+        if (oldStatus === 'COMPLETED' && (newStatus === 'PLANNED' || newStatus === 'CANCELLED' || newStatus === 'NO_SHOW')) {
           sessionChanges = {
             type: 'restore',
             message: 'Seans geri yüklendi'
           };
         }
-        // PLANNED/CANCELLED → COMPLETED: Seansı azalt
-        else if ((oldStatus === 'PLANNED' || oldStatus === 'CANCELLED') && newStatus === 'COMPLETED') {
+        // PLANNED/CANCELLED/NO_SHOW → COMPLETED: Seansı azalt
+        else if ((oldStatus === 'PLANNED' || oldStatus === 'CANCELLED' || oldStatus === 'NO_SHOW') && newStatus === 'COMPLETED') {
           // Seans kontrolü yap
           if (existingAppointment.sale.remainingSessions <= 0) {
             return res.status(400).json({
@@ -1023,7 +1023,7 @@ export const updateAppointment = async (req, res) => {
       return updatedAppointment;
     });
 
-    // ✅ RANDEVU İPTAL EDİLDİĞİNDE SMS BİLDİRİMİ GÖNDER
+    // ✅ RANDEVU İPTAL EDİLDİĞİNDE SMS BİLDİRİMİ GÖNDER (NO_SHOW için SMS yok)
     if (newStatus === 'CANCELLED' && oldStatus !== 'CANCELLED' && result.client?.phone) {
       try {
         // SMS gönderme kontrolü (sadece işletme ayarları)
@@ -1159,57 +1159,9 @@ export const deleteAppointment = async (req, res) => {
       });
     }
 
-    // ✅ RANDEVU SİLİNDİĞİNDE SMS BİLDİRİMİ GÖNDER (sadece PLANNED veya COMPLETED ise)
-    if ((existingAppointment.status === 'PLANNED' || existingAppointment.status === 'COMPLETED')) {
-      const clientInfo = await prisma.clients.findUnique({
-        where: { id: existingAppointment.clientId },
-        select: {
-          firstName: true,
-          lastName: true,
-          phone: true
-        }
-      });
-
-      const serviceInfo = await prisma.services.findUnique({
-        where: { id: existingAppointment.serviceId },
-        select: {
-          serviceName: true
-        }
-      });
-
-      if (clientInfo?.phone) {
-        try {
-          // SMS gönderme kontrolü (sadece işletme ayarları)
-          const account = await prisma.accounts.findUnique({
-            where: { id: accountId },
-            select: { smsEnabled: true, businessName: true }
-          });
-
-          if (account?.smsEnabled) {
-            const smsData = {
-              customerName: `${clientInfo.firstName} ${clientInfo.lastName}`,
-              serviceName: serviceInfo?.serviceName || 'Hizmet',
-              appointmentDate: existingAppointment.appointmentDate,
-              businessName: account.businessName
-            };
-
-            const smsMessage = prepareAppointmentCancelSMS(smsData);
-            const smsResult = await sendSMS(clientInfo.phone, smsMessage);
-
-            if (smsResult.success) {
-              console.log('✅ Randevu silme SMS başarıyla gönderildi:', smsResult.messageId);
-            } else {
-              console.error('❌ Randevu silme SMS hatası:', smsResult.error);
-            }
-          } else {
-            console.log('ℹ️ Silme SMS gönderilmedi: İşletme SMS servisi kapalı');
-          }
-        } catch (smsError) {
-          console.error('❌ SMS gönderme işlemi hatası:', smsError);
-          // SMS hatası silme işlemini engellemez
-        }
-      }
-    }
+    // ❌ RANDEVU SİLİNDİĞİNDE SMS GÖNDERİLMEZ
+    // Not: Sadece durum değişikliklerinde (CANCELLED) SMS gönderilir
+    // Silme işlemi sessiz yapılır (kullanıcı isteği üzerine)
 
     const response = {
       success: true,
@@ -1723,7 +1675,7 @@ export const checkStaffAvailability = async (req, res) => {
           lte: endOfDay
         },
         status: {
-          not: 'CANCELLED'
+          notIn: ['CANCELLED', 'NO_SHOW']
         }
       },
       include: {
@@ -2112,11 +2064,18 @@ export const completeAppointment = async (req, res) => {
       });
     }
 
-    // İptal edilmiş mi kontrol et
+    // İptal edilmiş veya gelmemiş mi kontrol et
     if (appointment.status === 'CANCELLED') {
       return res.status(400).json({
         success: false,
         message: 'İptal edilmiş randevu tamamlanamaz'
+      });
+    }
+
+    if (appointment.status === 'NO_SHOW') {
+      return res.status(400).json({
+        success: false,
+        message: 'Gelmemiş randevu tamamlanamaz. Önce durumu değiştirin.'
       });
     }
 

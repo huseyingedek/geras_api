@@ -382,6 +382,7 @@ enum AppointmentStatus {
   PLANNED
   COMPLETED
   CANCELLED
+  NO_SHOW
 }
 
 enum PaymentMethod {
