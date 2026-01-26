@@ -14,6 +14,10 @@ router.get('/me', isAuthenticated, authController.getMe);
 
 router.post('/change-password', isAuthenticated, authController.changePassword);
 
+// 📧 Şifre sıfırlama (login gerektirmez)
+router.post('/forgot-password', authLimiter, authController.forgotPassword);
+router.post('/reset-password', authLimiter, authController.resetPassword);
+
 // Oturum sahibinin izin matrisi
 router.get('/my-permissions', isAuthenticated, authController.getMyPermissions);
 

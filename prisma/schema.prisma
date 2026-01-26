@@ -36,6 +36,7 @@ model Accounts {
   users                User[]
   Vendors              Vendors[]
   reference_sources    reference_sources[]
+  clientNotes          ClientNotes[]
 
   @@index([smsEnabled], map: "idx_accounts_sms_enabled")
   @@map("Accounts")
@@ -77,6 +78,7 @@ model Clients {
   appointments Appointments[]
   account      Accounts       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   sales        Sales[]
+  clientNotes  ClientNotes[]
 
   @@map("Clients")
 }
@@ -173,6 +175,7 @@ model Staff {
   user             User?             @relation(fields: [userId], references: [id])
   staffPermissions StaffPermission[]
   workingHours     WorkingHours[]
+  clientNotes      ClientNotes[]
 
   @@map("Staff")
 }
@@ -193,20 +196,22 @@ model WorkingHours {
 }
 
 model User {
-  id                   Int                   @id @default(autoincrement())
-  username             String
-  email                String                @unique
-  password             String
-  phone                String?
-  role                 UserRole              @default(EMPLOYEE)
-  accountId            Int?
-  createdAt            DateTime              @default(now()) @map("CreatedAt")
-  updatedAt            DateTime              @default(now()) @updatedAt @map("UpdatedAt")
-  notificationSettings NotificationSetting[]
-  notifications        Notification[]
-  reports              Report[]
-  staff                Staff?
-  account              Accounts?             @relation(fields: [accountId], references: [id])
+  id                     Int                   @id @default(autoincrement())
+  username               String
+  email                  String                @unique
+  password               String
+  phone                  String?
+  role                   UserRole              @default(EMPLOYEE)
+  accountId              Int?
+  createdAt              DateTime              @default(now()) @map("CreatedAt")
+  updatedAt              DateTime              @default(now()) @updatedAt @map("UpdatedAt")
+  passwordResetToken     String?               @map("PasswordResetToken")
+  passwordResetExpires   DateTime?             @map("PasswordResetExpires")
+  notificationSettings   NotificationSetting[]
+  notifications          Notification[]
+  reports                Report[]
+  staff                  Staff?
+  account                Accounts?             @relation(fields: [accountId], references: [id])
 
   @@map("Users")
 }
@@ -433,4 +438,23 @@ enum ReportStatus {
   PENDING
   COMPLETED
   FAILED
+}
+
+model ClientNotes {
+  id        Int      @id @default(autoincrement()) @map("NoteID")
+  accountId Int      @map("AccountID")
+  clientId  Int      @map("ClientID")
+  staffId   Int      @map("StaffID")
+  noteText  String   @map("NoteText") @db.Text
+  createdAt DateTime @default(now()) @map("CreatedAt")
+  updatedAt DateTime @default(now()) @updatedAt @map("UpdatedAt")
+
+  account Accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  client  Clients  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  staff   Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([clientId], map: "idx_client_notes_client")
+  @@index([staffId], map: "idx_client_notes_staff")
+  @@index([createdAt], map: "idx_client_notes_created")
+  @@map("ClientNotes")
 }

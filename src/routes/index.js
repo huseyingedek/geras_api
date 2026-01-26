@@ -10,6 +10,7 @@ import dashboardRoutes from './dashboardRoutes.js';
 import notificationRoutes from './notificationRoutes.js';
 import expenseRoutes from './expenseRoutes.js';
 import referenceRoutes from './referenceRoutes.js';
+import clientNotesRoutes from './clientNotesRoutes.js';
 
 const router = express.Router();
 
@@ -28,5 +29,6 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/expenses', expenseRoutes);
 router.use('/references', referenceRoutes);
+router.use('/', clientNotesRoutes); // Client notes routes
 
 export default router; 

@@ -1,9 +1,11 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { promisify } from 'util';
+import crypto from 'crypto';
 import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
 import prisma from '../lib/prisma.js';
+import { sendPasswordResetEmail } from '../utils/emailService.js';
 
 const signToken = (id) => {
   return jwt.sign(
@@ -194,11 +196,164 @@ const changePassword = async (req, res, next) => {
   }
 };
 
+// 📧 Şifre Sıfırlama Talebi (Forgot Password)
+const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    // ✅ GÜVENLİK: Email validasyonu
+    if (!email) {
+      return next(new AppError('Lütfen email adresinizi giriniz', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+
+    // Email formatı kontrolü
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return next(new AppError('Geçersiz email formatı', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+
+    // Kullanıcıyı bul
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        username: true
+      }
+    });
+
+    // ✅ GÜVENLİK: Kullanıcı yoksa bile başarılı mesaj göster (enumeration attack'i önlemek için)
+    if (!user) {
+      return res.status(200).json({
+        status: 'success',
+        message: 'Eğer bu email adresine kayıtlı bir hesap varsa, şifre sıfırlama linki gönderildi'
+      });
+    }
+
+    // ✅ Rastgele token oluştur (crypto ile güvenli)
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    
+    // Token'ı hash'le (veritabanında şifrelenmiş sakla)
+    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    
+    // Token süresini 1 saat sonra ayarla
+    const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 saat
+
+    // Veritabanını güncelle
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetToken: hashedToken,
+        passwordResetExpires: resetExpires
+      }
+    });
+
+    // Email gönder
+    try {
+      await sendPasswordResetEmail(user.email, resetToken, user.username);
+
+      res.status(200).json({
+        status: 'success',
+        message: 'Şifre sıfırlama linki email adresinize gönderildi'
+      });
+
+    } catch (emailError) {
+      // Email gönderilemezse token'ı temizle
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordResetToken: null,
+          passwordResetExpires: null
+        }
+      });
+
+      console.error('Email gönderme hatası:', emailError);
+      return next(new AppError('Email gönderilemedi. Lütfen daha sonra tekrar deneyiniz', 500, ErrorCodes.GENERAL_SERVER_ERROR));
+    }
+
+  } catch (error) {
+    console.error('Forgot password hatası:', error);
+    next(new AppError('Şifre sıfırlama işlemi başlatılamadı', 500, ErrorCodes.GENERAL_SERVER_ERROR));
+  }
+};
+
+// 🔐 Şifre Sıfırlama (Reset Password)
+const resetPassword = async (req, res, next) => {
+  try {
+    // 🔍 DEBUG - Frontend'den gelen veriyi logla
+    console.log('===============================');
+    console.log('📥 RESET PASSWORD REQUEST');
+    console.log('Method:', req.method);
+    console.log('Content-Type:', req.headers['content-type']);
+    console.log('Body Keys:', Object.keys(req.body));
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+    console.log('===============================');
+    
+    const { token, newPassword } = req.body;
+
+    // ✅ GÜVENLİK: Validasyon
+    if (!token || !newPassword) {
+      console.log('❌ VALIDATION FAILED:');
+      console.log('  - Token var mı?:', !!token, '| Değer:', token);
+      console.log('  - NewPassword var mı?:', !!newPassword, '| Değer:', newPassword);
+      console.log('  - Body.token type:', typeof req.body.token);
+      console.log('  - Body.newPassword type:', typeof req.body.newPassword);
+      return next(new AppError('Token ve yeni şifre gereklidir', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+
+    // Şifre uzunluk kontrolü
+    if (newPassword.length < 6) {
+      return next(new AppError('Şifre en az 6 karakter olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+
+    // Token'ı hash'le (veritabanındaki ile karşılaştırmak için)
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Token'ı ve süresini kontrol et
+    const user = await prisma.user.findFirst({
+      where: {
+        passwordResetToken: hashedToken,
+        passwordResetExpires: {
+          gte: new Date() // Token süresi dolmamış olmalı
+        }
+      }
+    });
+
+    if (!user) {
+      return next(new AppError('Geçersiz veya süresi dolmuş token', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+
+    // ✅ Yeni şifreyi hash'le
+    const hashedNewPassword = await bcrypt.hash(newPassword, 12);
+
+    // Şifreyi güncelle ve token'ı temizle
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedNewPassword,
+        passwordResetToken: null,
+        passwordResetExpires: null
+      }
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Şifreniz başarıyla sıfırlandı. Şimdi yeni şifrenizle giriş yapabilirsiniz'
+    });
+
+  } catch (error) {
+    console.error('Reset password hatası:', error);
+    next(new AppError('Şifre sıfırlanamadı', 500, ErrorCodes.GENERAL_SERVER_ERROR));
+  }
+};
+
 export {
   createAdmin,
   login,
   getMe,
-  changePassword
+  changePassword,
+  forgotPassword,
+  resetPassword
 }; 
 
 // Oturum sahibinin izinlerini döner

@@ -63,6 +63,7 @@
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.6.5",
     "node-cron": "^4.2.0",
+    "nodemailer": "^7.0.12",
     "xss-clean": "^0.1.4"
   },
   "devDependencies": {
