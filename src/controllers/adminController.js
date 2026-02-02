@@ -491,11 +491,141 @@ const updateMyBusiness = catchAsync(async (req, res, next) => {
   });
 });
 
+// 📊 İŞLETME DETAYLI BİLGİLERİ (Admin Paneli için)
+const getAccountDetails = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  
+  // İşletmeyi temel bilgilerle çek
+  const account = await prisma.accounts.findUnique({
+    where: { id: parseInt(id) },
+    include: {
+      _count: {
+        select: {
+          users: true,
+          staff: true,
+          clients: true,
+          services: true,
+          sales: true,
+          appointments: true
+        }
+      },
+      // Aktif personeller (yeni önce)
+      staff: {
+        where: {
+          isActive: true
+        },
+        select: {
+          id: true,
+          fullName: true,
+          role: true,
+          phone: true,
+          isActive: true
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      }
+    }
+  });
+  
+  if (!account) {
+    return next(new AppError('İşletme hesabı bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+  }
+
+  // İstatistikler için paralel hesaplamalar
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const [totalRevenue, completedAppointments, activeClients] = await Promise.all([
+    // 1. Toplam gelir (COMPLETED ödemeler)
+    prisma.payments.aggregate({
+      where: {
+        sale: {
+          accountId: parseInt(id),
+          isDeleted: false
+        },
+        status: 'COMPLETED'
+      },
+      _sum: {
+        amountPaid: true
+      }
+    }),
+    
+    // 2. Tamamlanan randevular
+    prisma.appointments.count({
+      where: {
+        accountId: parseInt(id),
+        status: 'COMPLETED'
+      }
+    }),
+    
+    // 3. Aktif müşteriler (son 30 günde işlem yapan)
+    prisma.clients.count({
+      where: {
+        accountId: parseInt(id),
+        isActive: true,
+        OR: [
+          {
+            appointments: {
+              some: {
+                appointmentDate: {
+                  gte: thirtyDaysAgo
+                }
+              }
+            }
+          },
+          {
+            sales: {
+              some: {
+                saleDate: {
+                  gte: thirtyDaysAgo
+                },
+                isDeleted: false
+              }
+            }
+          }
+        ]
+      }
+    })
+  ]);
+
+  // Response formatla
+  const response = {
+    id: account.id,
+    businessName: account.businessName,
+    contactPerson: account.contactPerson,
+    email: account.email,
+    phone: account.phone,
+    businessType: account.businessType,
+    subscriptionPlan: account.subscriptionPlan,
+    isActive: account.isActive,
+    smsEnabled: account.smsEnabled,
+    reminderEnabled: account.reminderEnabled,
+    reminderHours: account.reminderHours,
+    createdAt: account.createdAt,
+    updatedAt: account.updatedAt,
+    _count: account._count,
+    stats: {
+      totalRevenue: parseFloat(totalRevenue._sum.amountPaid || 0),
+      totalAppointments: account._count.appointments,
+      activeClients: activeClients,
+      completedAppointments: completedAppointments
+    },
+    staff: account.staff
+  };
+
+  res.json({
+    status: 'success',
+    data: response
+  });
+});
+
 export {
   createAccount,
   getAllAccounts,
   getAccountById,
   updateAccount,
   deleteAccount,
-  updateMyBusiness
+  updateMyBusiness,
+  getAccountDetails
 }; 

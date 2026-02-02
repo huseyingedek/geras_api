@@ -15,4 +15,7 @@ router.route('/accounts/:id')
   .put(adminController.updateAccount)
   .delete(adminController.deleteAccount);
 
+// Detaylı işletme bilgileri (admin paneli için)
+router.get('/accounts/:id/details', adminController.getAccountDetails);
+
 export default router; 
