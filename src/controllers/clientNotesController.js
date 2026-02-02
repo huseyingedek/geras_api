@@ -89,23 +89,34 @@ export const createClientNote = async (req, res) => {
       });
     }
 
-    // Not oluştur
-    const note = await prisma.clientNotes.create({
-      data: {
-        accountId: accountId,
-        clientId: parseInt(clientId),
-        staffId: staffInfo.staffId,
-        noteText: noteText.trim()
-      },
-      include: {
-        staff: {
-          select: {
-            id: true,
-            fullName: true,
-            role: true
+    // Not oluştur ve müşteri updatedAt'ını güncelle (transaction ile)
+    const note = await prisma.$transaction(async (tx) => {
+      // Not oluştur
+      const newNote = await tx.clientNotes.create({
+        data: {
+          accountId: accountId,
+          clientId: parseInt(clientId),
+          staffId: staffInfo.staffId,
+          noteText: noteText.trim()
+        },
+        include: {
+          staff: {
+            select: {
+              id: true,
+              fullName: true,
+              role: true
+            }
           }
         }
-      }
+      });
+
+      // Müşteri updatedAt'ını güncelle (frontend sıralaması için)
+      await tx.clients.update({
+        where: { id: parseInt(clientId) },
+        data: { updatedAt: new Date() }
+      });
+
+      return newNote;
     });
 
     res.status(201).json({
@@ -285,23 +296,34 @@ export const updateClientNote = async (req, res) => {
       });
     }
 
-    // Güncelle
-    const updatedNote = await prisma.clientNotes.update({
-      where: {
-        id: parseInt(noteId)
-      },
-      data: {
-        noteText: noteText.trim()
-      },
-      include: {
-        staff: {
-          select: {
-            id: true,
-            fullName: true,
-            role: true
+    // Güncelle ve müşteri updatedAt'ını güncelle (transaction ile)
+    const updatedNote = await prisma.$transaction(async (tx) => {
+      // Notu güncelle
+      const updated = await tx.clientNotes.update({
+        where: {
+          id: parseInt(noteId)
+        },
+        data: {
+          noteText: noteText.trim()
+        },
+        include: {
+          staff: {
+            select: {
+              id: true,
+              fullName: true,
+              role: true
+            }
           }
         }
-      }
+      });
+
+      // Müşteri updatedAt'ını güncelle (frontend sıralaması için)
+      await tx.clients.update({
+        where: { id: existingNote.clientId },
+        data: { updatedAt: new Date() }
+      });
+
+      return updated;
     });
 
     res.json({
@@ -368,11 +390,20 @@ export const deleteClientNote = async (req, res) => {
       });
     }
 
-    // Sil
-    await prisma.clientNotes.delete({
-      where: {
-        id: parseInt(noteId)
-      }
+    // Sil ve müşteri updatedAt'ını güncelle (transaction ile)
+    await prisma.$transaction(async (tx) => {
+      // Notu sil
+      await tx.clientNotes.delete({
+        where: {
+          id: parseInt(noteId)
+        }
+      });
+
+      // Müşteri updatedAt'ını güncelle (frontend sıralaması için)
+      await tx.clients.update({
+        where: { id: existingNote.clientId },
+        data: { updatedAt: new Date() }
+      });
     });
 
     res.json({

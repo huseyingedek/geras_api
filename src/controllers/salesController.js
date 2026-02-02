@@ -71,9 +71,40 @@ export const getAllSales = async (req, res) => {
   try {
     const { accountId } = req.user;
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = parseInt(req.query.limit) || 50;
     const offset = (page - 1) * limit;
-    const { isDeleted, search, period, startDate, endDate } = req.query;
+    const { isDeleted, search, period, startDate, endDate, isPaid } = req.query;
+
+    // 🔒 PERFORMANS KORUMASI: Milyonlarca kayıt olduğu için en az 1 filtre zorunlu
+    const hasFilter = search || period || startDate || endDate || isDeleted || isPaid;
+    
+    if (!hasFilter) {
+      return res.json({
+        success: true,
+        data: [],
+        pagination: {
+          page,
+          limit,
+          total: 0,
+          totalPages: 0
+        },
+        summary: {
+          totalSalesAmount: 0,
+          totalRevenue: 0,
+          sessionBased: 0,
+          activeSessions: 0
+        },
+        message: 'Lütfen arama veya filtreleme yapınız (milyonlarca kayıt için performans koruması)',
+        filter: {
+          isDeleted: null,
+          search: null,
+          period: null,
+          startDate: null,
+          endDate: null,
+          isPaid: null
+        }
+      });
+    }
 
     let whereClause = {
       accountId: accountId
@@ -118,45 +149,54 @@ export const getAllSales = async (req, res) => {
       }
     }
 
-    // Müşteri ismiyle arama özelliği
+    // 🔍 Genişletilmiş arama: Müşteri adı + Telefon + Hizmet adı
     if (search && search.trim()) {
       const searchTerm = search.trim().toLowerCase();
-      whereClause.client = {
-        OR: [
-          {
-            firstName: {
-              contains: searchTerm,
-              mode: 'insensitive'
+      
+      // OR koşulları: Müşteri, Telefon veya Hizmet
+      const searchConditions = [];
+      
+      // 1. Müşteri adı araması
+      searchConditions.push({
+        client: {
+          OR: [
+            {
+              firstName: {
+                contains: searchTerm,
+                mode: 'insensitive'
+              }
+            },
+            {
+              lastName: {
+                contains: searchTerm,
+                mode: 'insensitive'
+              }
+            },
+            {
+              phone: {
+                contains: searchTerm,
+                mode: 'insensitive'
+              }
             }
-          },
-          {
-            lastName: {
-              contains: searchTerm,
-              mode: 'insensitive'
-            }
-          },
-          // Tam isim araması için (ad + soyad birleşimi)
-          {
-            AND: [
-              {
-                OR: [
-                  { firstName: { contains: searchTerm.split(' ')[0] || '', mode: 'insensitive' } },
-                  { lastName: { contains: searchTerm.split(' ')[0] || '', mode: 'insensitive' } }
-                ]
-              },
-              searchTerm.split(' ').length > 1 ? {
-                OR: [
-                  { firstName: { contains: searchTerm.split(' ')[1] || '', mode: 'insensitive' } },
-                  { lastName: { contains: searchTerm.split(' ')[1] || '', mode: 'insensitive' } }
-                ]
-              } : {}
-            ]
+          ]
+        }
+      });
+      
+      // 2. Hizmet adı araması
+      searchConditions.push({
+        service: {
+          serviceName: {
+            contains: searchTerm,
+            mode: 'insensitive'
           }
-        ]
-      };
+        }
+      });
+      
+      whereClause.OR = searchConditions;
     }
 
-    const sales = await prisma.sales.findMany({
+    // Satışları getir (isPaid filtresi için payments dahil)
+    let sales = await prisma.sales.findMany({
       where: whereClause,
       include: {
         client: {
@@ -178,11 +218,15 @@ export const getAllSales = async (req, res) => {
           }
         },
         payments: {
+          where: {
+            status: 'COMPLETED'
+          },
           select: {
             id: true,
             paymentDate: true,
             amountPaid: true,
-            paymentMethod: true
+            paymentMethod: true,
+            status: true
           }
         },
         sessions: {
@@ -192,7 +236,7 @@ export const getAllSales = async (req, res) => {
             status: true
           }
         },
-        reference_sources: {  // ✅ Referans bilgisi eklendi
+        reference_sources: {
           select: {
             id: true,
             reference_type: true,
@@ -202,48 +246,37 @@ export const getAllSales = async (req, res) => {
       },
       orderBy: {
         createdAt: 'desc'
-      },
-      skip: offset,
-      take: limit
+      }
+      // Not: isPaid filtresi için pagination'ı sonra yapacağız
     });
 
-    // Toplam sayı ve summary bilgilerini paralel olarak getir
-    const [totalSales, summaryData] = await Promise.all([
-      // Toplam kayıt sayısı
-      prisma.sales.count({
-        where: whereClause
-      }),
-      
-      // Summary için tüm satışları getir (pagination olmadan)
-      prisma.sales.findMany({
-        where: whereClause,
-        select: {
-          totalAmount: true,
-          remainingSessions: true,
-          service: {
-            select: {
-              isSessionBased: true
-            }
-          },
-          payments: {
-            where: {
-              status: 'COMPLETED'
-            },
-            select: {
-              amountPaid: true
-            }
-          }
+    // 💰 isPaid filtresi (ödeme durumu kontrolü)
+    if (isPaid === 'true' || isPaid === 'false') {
+      sales = sales.filter(sale => {
+        const totalPaid = sale.payments.reduce((sum, payment) => {
+          return sum + parseFloat(payment.amountPaid);
+        }, 0);
+        const remainingPayment = parseFloat(sale.totalAmount) - totalPaid;
+        
+        if (isPaid === 'true') {
+          return remainingPayment <= 0.01; // Tamamen ödendi (küçük tolerans)
+        } else {
+          return remainingPayment > 0.01; // Ödenmedi veya kısmi ödendi
         }
-      })
-    ]);
+      });
+    }
 
-    // Summary hesaplamaları
+    // 📄 Pagination'ı filtrelenmiş sonuçlara uygula
+    const totalSales = sales.length;
+    const paginatedSales = sales.slice(offset, offset + limit);
+
+    // 📊 Summary hesaplamaları (filtrelenmiş satışlar üzerinden)
     let totalSalesAmount = 0;
     let totalRevenue = 0;
     let sessionBased = 0;
     let activeSessions = 0;
 
-    summaryData.forEach(sale => {
+    sales.forEach(sale => {
       // Toplam satış tutarı
       totalSalesAmount += parseFloat(sale.totalAmount);
       
@@ -266,7 +299,7 @@ export const getAllSales = async (req, res) => {
 
     res.json({
       success: true,
-      data: sales,
+      data: paginatedSales,
       pagination: {
         page,
         limit,
@@ -284,7 +317,8 @@ export const getAllSales = async (req, res) => {
         search: search || null,
         period: period || null,
         startDate: startDate || null,
-        endDate: endDate || null
+        endDate: endDate || null,
+        isPaid: isPaid || null
       },
       dateRange: dateFilter ? {
         startDate: dateFilter.startDate?.toISOString(),
