@@ -12,6 +12,10 @@ router.use(isAuthenticated);
 router.route('/stats')
   .get(checkPermission('sales', 'view'), referenceController.getReferenceStats);
 
+// 📈 REFERANS PERFORMANS RAPORU (GELİŞMİŞ)
+router.route('/performance-report')
+  .get(checkPermission('sales', 'view'), referenceController.getReferencePerformanceReport);
+
 // 📋 REFERANS KAYNAKLARI
 router.route('/')
   .get(checkPermission('sales', 'view'), referenceController.getAllReferences)

@@ -10,8 +10,9 @@ const catchAsync = fn => {
 
 
 const createClient = catchAsync(async (req, res, next) => {
-  const { firstName, lastName, phone, email } = req.body;
+  const { firstName, lastName, phone, email, initialNote } = req.body;
   const accountId = req.user.accountId;
+  const userId = req.user.id;
   
   if (!accountId) {
     return next(new AppError('İşletme bilgisi bulunamadı', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
@@ -65,20 +66,86 @@ const createClient = catchAsync(async (req, res, next) => {
     }
   }
   
-  const newClient = await prisma.clients.create({
-    data: {
-      accountId,
-      firstName,
-      lastName,
-      phone,
-      email
+  // ✨ YENİ: initialNote validation
+  if (initialNote && initialNote.trim().length > 5000) {
+    return next(new AppError('Not metni en fazla 5000 karakter olabilir', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  // ✨ YENİ: Eğer not varsa, staff bilgisini al
+  let staffId = null;
+  if (initialNote && initialNote.trim()) {
+    console.log('📝 Not ekleme işlemi başlıyor...');
+    console.log('  - userId:', userId);
+    console.log('  - accountId:', accountId);
+    
+    const staff = await prisma.staff.findFirst({
+      where: {
+        userId: parseInt(userId),
+        accountId: parseInt(accountId)
+      }
+    });
+
+    console.log('  - Staff bulundu mu:', staff ? 'EVET' : 'HAYIR');
+    
+    if (!staff) {
+      // Staff kaydı yoksa kullanıcıya bilgi ver
+      console.warn(`⚠️ User ${userId} için staff kaydı bulunamadı, not eklenemedi`);
+      return next(new AppError('Not eklemek için önce personel kaydınız oluşturulmalı. Lütfen yöneticinizle iletişime geçin.', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    } else {
+      staffId = staff.id;
+      console.log('  - staffId:', staffId);
     }
+  }
+  
+  // Transaction: Müşteri + Not (varsa)
+  const result = await prisma.$transaction(async (tx) => {
+    // 1. Müşteriyi oluştur
+    const newClient = await tx.clients.create({
+      data: {
+        accountId,
+        firstName,
+        lastName,
+        phone,
+        email
+      }
+    });
+
+    // 2. Not varsa ve staff bulunduysa, notu ekle
+    let createdNote = null;
+    if (initialNote && initialNote.trim() && staffId) {
+      console.log('✅ Not ekleniyor...');
+      createdNote = await tx.clientNotes.create({
+        data: {
+          accountId: accountId,
+          clientId: newClient.id,
+          staffId: staffId,
+          noteText: initialNote.trim()
+        },
+        include: {
+          staff: {
+            select: {
+              id: true,
+              fullName: true,
+              role: true
+            }
+          }
+        }
+      });
+      console.log('✅ Not başarıyla eklendi, ID:', createdNote.id);
+    }
+
+    return { newClient, createdNote };
   });
   
   res.status(201).json({
     status: 'success',
-    data: newClient,
-    message: 'Müşteri başarıyla oluşturuldu'
+    data: {
+      client: result.newClient,
+      note: result.createdNote // Not eklendiyse döner, yoksa null
+    },
+    message: result.createdNote 
+      ? 'Müşteri ve not başarıyla oluşturuldu' 
+      : 'Müşteri başarıyla oluşturuldu'
   });
 });
 

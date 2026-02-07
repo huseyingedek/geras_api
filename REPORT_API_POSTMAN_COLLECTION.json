@@ -1,0 +1,245 @@
+{
+  "info": {
+    "name": "GERAS SYSTEM - Gelir-Gider Raporları",
+    "description": "Finansal raporlama API'leri - Gelir, gider, kar/zarar analizleri",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Gelir-Gider Özet Raporu - Bu Ay",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/reports/income-expense-summary?period=this_month",
+          "host": ["{{base_url}}"],
+          "path": ["api", "reports", "income-expense-summary"],
+          "query": [
+            {
+              "key": "period",
+              "value": "this_month",
+              "description": "Periyot: today, yesterday, this_week, last_week, this_month, last_month, this_year"
+            }
+          ]
+        },
+        "description": "Bu ayın gelir-gider özet raporu\n\n**Dönen Veriler:**\n- Toplam Ciro (Gelir)\n- Toplam Gider\n- Net Kar/Zarar\n- Kar Marjı %\n- Ödeme yöntemi dağılımı\n- Gider tipi dağılımı\n- Trend analizi (önceki döneme göre)"
+      }
+    },
+    {
+      "name": "2. Gelir-Gider Özet - Custom Tarih Aralığı",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/reports/income-expense-summary?startDate=2026-01-01&endDate=2026-01-31",
+          "host": ["{{base_url}}"],
+          "path": ["api", "reports", "income-expense-summary"],
+          "query": [
+            {
+              "key": "startDate",
+              "value": "2026-01-01",
+              "description": "Başlangıç tarihi (YYYY-MM-DD)"
+            },
+            {
+              "key": "endDate",
+              "value": "2026-01-31",
+              "description": "Bitiş tarihi (YYYY-MM-DD)"
+            }
+          ]
+        },
+        "description": "Özel tarih aralığı için gelir-gider raporu\n\nÖrnek: Ocak 2026 ayının tamamı"
+      }
+    },
+    {
+      "name": "3. Gelir-Gider Özet - Bugün",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/reports/income-expense-summary?period=today",
+          "host": ["{{base_url}}"],
+          "path": ["api", "reports", "income-expense-summary"],
+          "query": [
+            {
+              "key": "period",
+              "value": "today"
+            }
+          ]
+        },
+        "description": "Bugünkü gelir-gider durumu"
+      }
+    },
+    {
+      "name": "4. Gelir-Gider Özet - Geçen Ay",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/reports/income-expense-summary?period=last_month",
+          "host": ["{{base_url}}"],
+          "path": ["api", "reports", "income-expense-summary"],
+          "query": [
+            {
+              "key": "period",
+              "value": "last_month"
+            }
+          ]
+        },
+        "description": "Geçen ayın gelir-gider raporu - ay sonu değerlendirmesi için"
+      }
+    },
+    {
+      "name": "5. Gelir-Gider Özet - Bu Yıl",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/reports/income-expense-summary?period=this_year",
+          "host": ["{{base_url}}"],
+          "path": ["api", "reports", "income-expense-summary"],
+          "query": [
+            {
+              "key": "period",
+              "value": "this_year"
+            }
+          ]
+        },
+        "description": "Yıllık gelir-gider raporu"
+      }
+    },
+    {
+      "name": "6. Detaylı Finansal Rapor - Günlük Kırılım",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/reports/detailed-financial?period=this_month&groupBy=day",
+          "host": ["{{base_url}}"],
+          "path": ["api", "reports", "detailed-financial"],
+          "query": [
+            {
+              "key": "period",
+              "value": "this_month"
+            },
+            {
+              "key": "groupBy",
+              "value": "day",
+              "description": "Gruplama: day, week, month"
+            }
+          ]
+        },
+        "description": "Günlük bazda gelir-gider-kar grafiği için veri\n\n**Frontend Chart'lar için ideal!**"
+      }
+    },
+    {
+      "name": "7. Detaylı Finansal - Haftalık Kırılım",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/reports/detailed-financial?startDate=2026-01-01&endDate=2026-02-28&groupBy=week",
+          "host": ["{{base_url}}"],
+          "path": ["api", "reports", "detailed-financial"],
+          "query": [
+            {
+              "key": "startDate",
+              "value": "2026-01-01"
+            },
+            {
+              "key": "endDate",
+              "value": "2026-02-28"
+            },
+            {
+              "key": "groupBy",
+              "value": "week"
+            }
+          ]
+        },
+        "description": "Haftalık performans analizi"
+      }
+    },
+    {
+      "name": "8. Detaylı Finansal - Aylık Kırılım",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/reports/detailed-financial?period=this_year&groupBy=month",
+          "host": ["{{base_url}}"],
+          "path": ["api", "reports", "detailed-financial"],
+          "query": [
+            {
+              "key": "period",
+              "value": "this_year"
+            },
+            {
+              "key": "groupBy",
+              "value": "month"
+            }
+          ]
+        },
+        "description": "Yıllık aylık performans karşılaştırması"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "YOUR_JWT_TOKEN_HERE",
+      "type": "string"
+    }
+  ]
+}

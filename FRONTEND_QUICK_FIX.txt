@@ -1,0 +1,44 @@
+# Frontend'e Not: Tarih Label Sorunu
+
+## Sorun
+Rapor sayfasında "Bu Ay" yazıyor ama aslında "31 Oca - 7 Şub 2026" olması lazım.
+
+## Çözüm
+Backend'den dönen `period.label` değerini kullanın.
+
+## Kod Değişikliği
+
+**Öncesi:**
+```jsx
+<div className="date-display">
+  <span>Bu Ay</span>  {/* Hard-coded veya dropdown'dan geliyor */}
+</div>
+```
+
+**Sonrası:**
+```jsx
+<div className="date-display">
+  <span>{reportData?.data?.period?.label}</span>  {/* Backend'den geliyor */}
+</div>
+```
+
+## API Response
+```json
+{
+  "data": {
+    "period": {
+      "label": "31 Oca - 7 Şub 2026",  ← BU DEĞERİ KULLAN
+      "type": "custom",
+      "startDate": "2026-01-31",
+      "endDate": "2026-02-07"
+    }
+  }
+}
+```
+
+## Test
+1. API'yi çağır
+2. Console'da kontrol et: `console.log(data.data.period.label)`
+3. Çıkan değeri ekranda göster
+
+Backend tarafı hazır, sadece frontend'de değişiklik yapın. 👍
