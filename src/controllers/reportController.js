@@ -652,6 +652,217 @@ export const debugPayments = async (req, res) => {
     });
   }
 };
+
+
+/**
+ * 💎 MÜŞTERİ SADAKAT RAPORU
+ * 
+ * Müşterilerin sadakat seviyelerini analiz eder:
+ * - Müşteri Yaşam Boyu Değeri (LTV)
+ * - Tekrar Gelme Oranı
+ * - En Sadık Müşteriler
+ * - Kayıp Müşteriler (Churn)
+ */
+export const getCustomerLoyaltyReport = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const { minPurchases, sortBy = 'ltv' } = req.query;
+
+    console.log('💎 Müşteri Sadakat Raporu İsteği:');
+    console.log('- accountId:', accountId);
+
+    // Tüm müşterileri ve satışlarını çek
+    const clients = await prisma.clients.findMany({
+      where: {
+        accountId: accountId,
+        isActive: true
+      },
+      include: {
+        sales: {
+          where: {
+            isDeleted: false
+          },
+          include: {
+            payments: {
+              where: {
+                status: 'COMPLETED'
+              }
+            }
+          },
+          orderBy: {
+            saleDate: 'asc'
+          }
+        }
+      }
+    });
+
+    console.log('👥 Toplam aktif müşteri:', clients.length);
+
+    const now = new Date();
+    const loyaltyData = [];
+
+    clients.forEach(client => {
+      if (client.sales.length === 0) return; // Hiç satış olmayan müşteri
+
+      // Müşteri metrikleri
+      const purchaseCount = client.sales.length;
+      
+      // Toplam harcama (LTV) - Sadece COMPLETED ödemeler
+      let totalSpent = 0;
+      client.sales.forEach(sale => {
+        const paidForSale = sale.payments.reduce((sum, p) => {
+          const amount = parseFloat(p.amountPaid);
+          return sum + (isNaN(amount) ? 0 : amount);
+        }, 0);
+        totalSpent += paidForSale;
+      });
+
+      // İlk ve son satış tarihi
+      const firstPurchaseDate = new Date(client.sales[0].saleDate);
+      const lastPurchaseDate = new Date(client.sales[client.sales.length - 1].saleDate);
+      
+      // Müşteri yaşı (gün)
+      const customerAgeInDays = Math.floor((now - firstPurchaseDate) / (1000 * 60 * 60 * 24));
+      
+      // Son alışverişten bu yana geçen gün
+      const daysSinceLastPurchase = Math.floor((now - lastPurchaseDate) / (1000 * 60 * 60 * 24));
+      
+      // Ortalama sipariş değeri
+      const averageOrderValue = purchaseCount > 0 ? totalSpent / purchaseCount : 0;
+      
+      // Ortalama alışveriş sıklığı (gün)
+      const averagePurchaseFrequency = purchaseCount > 1 
+        ? customerAgeInDays / (purchaseCount - 1)
+        : null;
+
+      // Sadakat skoru hesapla (0-100)
+      let loyaltyScore = 0;
+      
+      // 1. Satın alma sayısına göre puan (max 30)
+      loyaltyScore += Math.min(30, purchaseCount * 3);
+      
+      // 2. Toplam harcamaya göre puan (max 30)
+      loyaltyScore += Math.min(30, (totalSpent / 1000) * 2);
+      
+      // 3. Müşteri yaşına göre puan (max 20)
+      loyaltyScore += Math.min(20, (customerAgeInDays / 30) * 2);
+      
+      // 4. Yakın zamanlı aktiviteye göre puan (max 20)
+      if (daysSinceLastPurchase <= 30) {
+        loyaltyScore += 20;
+      } else if (daysSinceLastPurchase <= 60) {
+        loyaltyScore += 15;
+      } else if (daysSinceLastPurchase <= 90) {
+        loyaltyScore += 10;
+      } else if (daysSinceLastPurchase <= 180) {
+        loyaltyScore += 5;
+      }
+
+      // Sadakat seviyesi
+      let loyaltyLevel = 'Yeni Müşteri';
+      if (loyaltyScore >= 80) loyaltyLevel = 'VIP';
+      else if (loyaltyScore >= 60) loyaltyLevel = 'Sadık';
+      else if (loyaltyScore >= 40) loyaltyLevel = 'Düzenli';
+      else if (loyaltyScore >= 20) loyaltyLevel = 'Aktif';
+
+      // Churn risk (kayıp riski)
+      let churnRisk = 'Düşük';
+      if (daysSinceLastPurchase > 180) churnRisk = 'Yüksek';
+      else if (daysSinceLastPurchase > 90) churnRisk = 'Orta';
+
+      loyaltyData.push({
+        clientId: client.id,
+        clientName: `${client.firstName} ${client.lastName}`,
+        phone: client.phone,
+        email: client.email,
+        purchaseCount: purchaseCount,
+        totalSpent: parseFloat(totalSpent.toFixed(2)),
+        averageOrderValue: parseFloat(averageOrderValue.toFixed(2)),
+        firstPurchaseDate: firstPurchaseDate.toISOString().split('T')[0],
+        lastPurchaseDate: lastPurchaseDate.toISOString().split('T')[0],
+        customerAgeInDays: customerAgeInDays,
+        daysSinceLastPurchase: daysSinceLastPurchase,
+        averagePurchaseFrequency: averagePurchaseFrequency ? parseFloat(averagePurchaseFrequency.toFixed(1)) : null,
+        loyaltyScore: parseFloat(loyaltyScore.toFixed(1)),
+        loyaltyLevel: loyaltyLevel,
+        churnRisk: churnRisk
+      });
+    });
+
+    // Filtreleme (minPurchases varsa)
+    let filteredData = loyaltyData;
+    if (minPurchases) {
+      filteredData = loyaltyData.filter(c => c.purchaseCount >= parseInt(minPurchases));
+    }
+
+    // Sıralama
+    switch (sortBy) {
+      case 'ltv':
+        filteredData.sort((a, b) => b.totalSpent - a.totalSpent);
+        break;
+      case 'purchases':
+        filteredData.sort((a, b) => b.purchaseCount - a.purchaseCount);
+        break;
+      case 'loyalty_score':
+        filteredData.sort((a, b) => b.loyaltyScore - a.loyaltyScore);
+        break;
+      case 'last_purchase':
+        filteredData.sort((a, b) => a.daysSinceLastPurchase - b.daysSinceLastPurchase);
+        break;
+      default:
+        filteredData.sort((a, b) => b.totalSpent - a.totalSpent);
+    }
+
+    // Özet istatistikler
+    const totalLTV = filteredData.reduce((sum, c) => sum + c.totalSpent, 0);
+    const averageLTV = filteredData.length > 0 ? totalLTV / filteredData.length : 0;
+    const totalPurchases = filteredData.reduce((sum, c) => sum + c.purchaseCount, 0);
+    const averagePurchases = filteredData.length > 0 ? totalPurchases / filteredData.length : 0;
+
+    // Seviye bazında grupla
+    const byLevel = {
+      VIP: filteredData.filter(c => c.loyaltyLevel === 'VIP').length,
+      Sadık: filteredData.filter(c => c.loyaltyLevel === 'Sadık').length,
+      Düzenli: filteredData.filter(c => c.loyaltyLevel === 'Düzenli').length,
+      Aktif: filteredData.filter(c => c.loyaltyLevel === 'Aktif').length,
+      'Yeni Müşteri': filteredData.filter(c => c.loyaltyLevel === 'Yeni Müşteri').length
+    };
+
+    // Churn risk bazında grupla
+    const byChurnRisk = {
+      Yüksek: filteredData.filter(c => c.churnRisk === 'Yüksek').length,
+      Orta: filteredData.filter(c => c.churnRisk === 'Orta').length,
+      Düşük: filteredData.filter(c => c.churnRisk === 'Düşük').length
+    };
+
+    res.json({
+      success: true,
+      data: filteredData,
+      summary: {
+        totalCustomers: filteredData.length,
+        totalLTV: parseFloat(totalLTV.toFixed(2)),
+        averageLTV: parseFloat(averageLTV.toFixed(2)),
+        totalPurchases: totalPurchases,
+        averagePurchases: parseFloat(averagePurchases.toFixed(1)),
+        byLoyaltyLevel: byLevel,
+        byChurnRisk: byChurnRisk,
+        topCustomer: filteredData.length > 0 ? filteredData[0].clientName : null
+      },
+      meta: {
+        sortedBy: sortBy,
+        minPurchases: minPurchases ? parseInt(minPurchases) : null
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Müşteri sadakat raporu hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Müşteri sadakat raporu alınamadı',
+      error: error.message
+    });
+  }
+};
 export const getDetailedFinancialReport = async (req, res) => {
   try {
     const { accountId } = req.user;

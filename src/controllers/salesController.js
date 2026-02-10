@@ -70,10 +70,12 @@ const getDateRange = (period) => {
 export const getAllSales = async (req, res) => {
   try {
     const { accountId } = req.user;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const offset = (page - 1) * limit;
     const { isDeleted, search, period, startDate, endDate, isPaid } = req.query;
+    
+    const hasPageParam = req.query.page !== undefined;
+    const page = parseInt(req.query.page) || 1;
+    const limit = hasPageParam ? (parseInt(req.query.limit) || 50) : 999999;
+    const offset = (page - 1) * limit;
 
     // 🔒 PERFORMANS KORUMASI: Milyonlarca kayıt olduğu için en az 1 filtre zorunlu
     const hasFilter = search || period || startDate || endDate || isDeleted || isPaid;
@@ -84,9 +86,10 @@ export const getAllSales = async (req, res) => {
         data: [],
         pagination: {
           page,
-          limit,
+          limit: hasPageParam ? limit : null,
           total: 0,
-          totalPages: 0
+          totalPages: 0,
+          hasPageParam
         },
         summary: {
           totalSalesAmount: 0,
@@ -268,7 +271,10 @@ export const getAllSales = async (req, res) => {
 
     // 📄 Pagination'ı filtrelenmiş sonuçlara uygula
     const totalSales = sales.length;
-    const paginatedSales = sales.slice(offset, offset + limit);
+    const paginatedSales = hasPageParam ? sales.slice(offset, offset + limit) : sales;
+
+    console.log('  - Toplam satış:', totalSales);
+    console.log('  - Döndürülen satış:', paginatedSales.length);
 
     // 📊 Summary hesaplamaları (filtrelenmiş satışlar üzerinden)
     let totalSalesAmount = 0;
@@ -300,11 +306,18 @@ export const getAllSales = async (req, res) => {
     res.json({
       success: true,
       data: paginatedSales,
-      pagination: {
+      pagination: hasPageParam ? {
+        // Liste görünümünde normal pagination
         page,
         limit,
         total: totalSales,
-        totalPages: Math.ceil(totalSales / limit)
+        totalPages: Math.ceil(totalSales / limit),
+        hasPageParam: true
+      } : {
+        // Dropdown görünümünde pagination yok
+        total: totalSales,
+        returned: paginatedSales.length,
+        hasPageParam: false
       },
       summary: {
         totalSalesAmount: parseFloat(totalSalesAmount.toFixed(2)),

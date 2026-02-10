@@ -658,7 +658,7 @@ const getAppointmentDateRange = (period) => {
       };
     
     case 'nextWeek':
-      // 🆕 GELECEK HAFTA FİLTRESİ
+      
       const nextWeekStart = new Date(today);
       const currentDayOfWeek = nextWeekStart.getDay();
       const daysUntilNextMonday = currentDayOfWeek === 0 ? 1 : 8 - currentDayOfWeek;
@@ -666,7 +666,7 @@ const getAppointmentDateRange = (period) => {
       nextWeekStart.setHours(0, 0, 0, 0);
       
       const nextWeekEnd = new Date(nextWeekStart);
-      nextWeekEnd.setDate(nextWeekEnd.getDate() + 6); // Pazar günü sonu
+      nextWeekEnd.setDate(nextWeekEnd.getDate() + 6);
       nextWeekEnd.setHours(23, 59, 59, 999);
       
       return {
@@ -707,10 +707,13 @@ const getAppointmentDateRange = (period) => {
 export const getAllAppointments = async (req, res) => {
   try {
     const { accountId } = req.user;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * limit;
     const { status, staffId, period, startDate, endDate } = req.query;
+    
+    const isCalendarView = !!(startDate || endDate || period);
+    
+    const page = parseInt(req.query.page) || 1;
+    const limit = isCalendarView ? 999999 : (parseInt(req.query.limit) || 10);
+    const offset = (page - 1) * limit;
 
     let whereClause = {
       accountId: accountId
@@ -795,23 +798,32 @@ export const getAllAppointments = async (req, res) => {
         orderBy: {
           appointmentDate: 'desc'
         },
-        skip: offset,
-        take: limit
+        ...(isCalendarView ? {} : { skip: offset, take: limit }) // Takvim görünümünde pagination YOK
       }),
       prisma.appointments.count({
         where: whereClause
       })
     ]);
 
+    console.log('  - Bulunan randevu sayısı:', total);
+    console.log('  - Döndürülen randevu sayısı:', appointments.length);
+
     // Response'a filtreleme bilgilerini ekle
     const response = {
       success: true,
       data: appointments,
-      pagination: {
+      pagination: isCalendarView ? {
+        // Takvim görünümünde pagination bilgisi gösterme ama istatistik ver
+        total: total,
+        returned: appointments.length,
+        isCalendarView: true
+      } : {
+        // Liste görünümünde normal pagination
         page: page,
         limit: limit,
         total: total,
-        pages: Math.ceil(total / limit)
+        pages: Math.ceil(total / limit),
+        isCalendarView: false
       },
       filters: {
         period: period || null,

@@ -51,4 +51,21 @@ router.route('/detailed-financial')
 router.route('/debug-payments')
   .get(reportController.debugPayments);
 
+/**
+ * 💎 MÜŞTERİ SADAKAT RAPORU
+ * GET /api/reports/customer-loyalty
+ * 
+ * Query Params:
+ * - minPurchases: Minimum satın alma sayısı filtresi (örn: 3)
+ * - sortBy: 'ltv' | 'purchases' | 'loyalty_score' | 'last_purchase' (varsayılan: 'ltv')
+ * 
+ * Müşteri sadakati, LTV, churn risk analizi
+ * 
+ * Örnek:
+ * /api/reports/customer-loyalty?sortBy=ltv
+ * /api/reports/customer-loyalty?minPurchases=3&sortBy=loyalty_score
+ */
+router.route('/customer-loyalty')
+  .get(reportController.getCustomerLoyaltyReport);
+
 export default router;
