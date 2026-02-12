@@ -954,6 +954,22 @@ export const updateSale = async (req, res) => {
       });
     }
 
+    // 🔒 2 GÜN SONRA GÜNCELLEME ENGELİ
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    twoDaysAgo.setHours(0, 0, 0, 0);
+    
+    const saleDate = new Date(existingSale.saleDate);
+    saleDate.setHours(0, 0, 0, 0);
+    
+    if (saleDate < twoDaysAgo) {
+      return res.status(403).json({
+        success: false,
+        message: 'Bu satış 2 günden eski olduğu için güncellenemez',
+        saleDate: existingSale.saleDate
+      });
+    }
+
     // Eğer serviceId güncelleniyorsa, hizmeti kontrol et
     if (serviceId && serviceId !== existingSale.serviceId) {
       const service = await prisma.services.findFirst({
@@ -1047,6 +1063,22 @@ export const deleteSale = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Satış bulunamadı'
+      });
+    }
+
+    // 🔒 2 GÜN SONRA SİLME ENGELİ
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    twoDaysAgo.setHours(0, 0, 0, 0);
+    
+    const saleDate = new Date(existingSale.saleDate);
+    saleDate.setHours(0, 0, 0, 0);
+    
+    if (saleDate < twoDaysAgo) {
+      return res.status(403).json({
+        success: false,
+        message: 'Bu satış 2 günden eski olduğu için silinemez',
+        saleDate: existingSale.saleDate
       });
     }
 
@@ -1178,6 +1210,22 @@ export const addPaymentToSale = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Satış bulunamadı'
+      });
+    }
+
+    // 🔒 2 GÜN SONRA ÖDEME EKLEMENİN ENGELLENMESİ
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    twoDaysAgo.setHours(0, 0, 0, 0);
+    
+    const saleDate = new Date(sale.saleDate);
+    saleDate.setHours(0, 0, 0, 0);
+    
+    if (saleDate < twoDaysAgo) {
+      return res.status(403).json({
+        success: false,
+        message: 'Bu satış 2 günden eski olduğu için ödeme eklenemez',
+        saleDate: sale.saleDate
       });
     }
 
@@ -1731,6 +1779,22 @@ export const updatePaymentStatus = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Ödeme bulunamadı'
+      });
+    }
+
+    // 🔒 2 GÜN SONRA ÖDEME GÜNCELLEME ENGELİ
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    twoDaysAgo.setHours(0, 0, 0, 0);
+    
+    const paymentDateCheck = new Date(payment.paymentDate);
+    paymentDateCheck.setHours(0, 0, 0, 0);
+    
+    if (paymentDateCheck < twoDaysAgo) {
+      return res.status(403).json({
+        success: false,
+        message: 'Bu ödeme 2 günden eski olduğu için güncellenemez',
+        paymentDate: payment.paymentDate
       });
     }
 

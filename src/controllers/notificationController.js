@@ -130,3 +130,276 @@ export const getReminderOptions = async (req, res) => {
     });
   }
 };
+
+
+// ============================================================
+// 🔔 BİLDİRİM SİSTEMİ API'LERİ
+// ============================================================
+
+/**
+ * Kullanıcının tüm bildirimlerini getir
+ */
+export const getAllNotifications = async (req, res) => {
+  try {
+    const { accountId, userId } = req.user;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
+    const { isRead, type } = req.query;
+
+    let whereClause = {
+      accountId: accountId,
+      userId: userId
+    };
+
+    // isRead filtresi
+    if (isRead === 'true') {
+      whereClause.isRead = true;
+    } else if (isRead === 'false') {
+      whereClause.isRead = false;
+    }
+
+    // type filtresi
+    if (type) {
+      whereClause.type = type;
+    }
+
+    const [notifications, total, unreadCount] = await Promise.all([
+      prisma.notification.findMany({
+        where: whereClause,
+        orderBy: {
+          createdAt: 'desc'
+        },
+        skip: offset,
+        take: limit
+      }),
+      prisma.notification.count({
+        where: whereClause
+      }),
+      prisma.notification.count({
+        where: {
+          accountId: accountId,
+          userId: userId,
+          isRead: false
+        }
+      })
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: notifications,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      },
+      summary: {
+        unreadCount: unreadCount,
+        totalCount: total
+      }
+    });
+
+  } catch (error) {
+    console.error('Bildirimler getirme hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Bildirimler alınırken hata oluştu',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Okunmamış bildirim sayısını getir
+ */
+export const getUnreadCount = async (req, res) => {
+  try {
+    const { accountId, userId } = req.user;
+
+    const unreadCount = await prisma.notification.count({
+      where: {
+        accountId: accountId,
+        userId: userId,
+        isRead: false
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        unreadCount: unreadCount
+      }
+    });
+
+  } catch (error) {
+    console.error('Okunmamış bildirim sayısı hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Okunmamış bildirim sayısı alınırken hata oluştu',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Bildirimi okundu olarak işaretle
+ */
+export const markAsRead = async (req, res) => {
+  try {
+    const { accountId, userId } = req.user;
+    const { id } = req.params;
+
+    const notification = await prisma.notification.findFirst({
+      where: {
+        id: parseInt(id),
+        accountId: accountId,
+        userId: userId
+      }
+    });
+
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bildirim bulunamadı'
+      });
+    }
+
+    const updatedNotification = await prisma.notification.update({
+      where: {
+        id: parseInt(id)
+      },
+      data: {
+        isRead: true,
+        updatedAt: new Date()
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Bildirim okundu olarak işaretlendi',
+      data: updatedNotification
+    });
+
+  } catch (error) {
+    console.error('Bildirim okundu işaretleme hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Bildirim okundu işaretlenemedi',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Tüm bildirimleri okundu olarak işaretle
+ */
+export const markAllAsRead = async (req, res) => {
+  try {
+    const { accountId, userId } = req.user;
+
+    const result = await prisma.notification.updateMany({
+      where: {
+        accountId: accountId,
+        userId: userId,
+        isRead: false
+      },
+      data: {
+        isRead: true,
+        updatedAt: new Date()
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Tüm bildirimler okundu olarak işaretlendi',
+      data: {
+        updatedCount: result.count
+      }
+    });
+
+  } catch (error) {
+    console.error('Tüm bildirimleri okundu işaretleme hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Bildirimler okundu işaretlenemedi',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Bildirimi sil
+ */
+export const deleteNotification = async (req, res) => {
+  try {
+    const { accountId, userId } = req.user;
+    const { id } = req.params;
+
+    const notification = await prisma.notification.findFirst({
+      where: {
+        id: parseInt(id),
+        accountId: accountId,
+        userId: userId
+      }
+    });
+
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bildirim bulunamadı'
+      });
+    }
+
+    await prisma.notification.delete({
+      where: {
+        id: parseInt(id)
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Bildirim başarıyla silindi'
+    });
+
+  } catch (error) {
+    console.error('Bildirim silme hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Bildirim silinemedi',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Tüm bildirimleri sil
+ */
+export const deleteAllNotifications = async (req, res) => {
+  try {
+    const { accountId, userId } = req.user;
+
+    const result = await prisma.notification.deleteMany({
+      where: {
+        accountId: accountId,
+        userId: userId
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Tüm bildirimler başarıyla silindi',
+      data: {
+        deletedCount: result.count
+      }
+    });
+
+  } catch (error) {
+    console.error('Tüm bildirimleri silme hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Bildirimler silinemedi',
+      error: error.message
+    });
+  }
+};

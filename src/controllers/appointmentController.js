@@ -879,6 +879,43 @@ export const updateAppointment = async (req, res) => {
       });
     }
 
+    // 🔒 2 GÜN SONRA RANDEVU GÜNCELLEME ENGELİ
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    twoDaysAgo.setHours(0, 0, 0, 0);
+    
+    const appointmentDateCheck = new Date(existingAppointment.appointmentDate);
+    appointmentDateCheck.setHours(0, 0, 0, 0);
+    
+    if (appointmentDateCheck < twoDaysAgo) {
+      // COMPLETED, NO_SHOW, CANCELLED durumundaki randevular hiç değiştirilemez
+      if (existingAppointment.status === 'COMPLETED' || 
+          existingAppointment.status === 'NO_SHOW' || 
+          existingAppointment.status === 'CANCELLED') {
+        return res.status(403).json({
+          success: false,
+          message: `Bu randevu ${existingAppointment.status} durumunda ve 2 günden eski olduğu için güncellenemez`,
+          appointmentDate: existingAppointment.appointmentDate,
+          currentStatus: existingAppointment.status
+        });
+      }
+      
+      // PLANNED durumunda ise sadece status değiştirilebilir
+      if (existingAppointment.status === 'PLANNED') {
+        // Sadece status değişikliği mi yapılıyor kontrol et
+        const isOnlyStatusChange = status && !staffId && !appointmentDate && notes === undefined;
+        
+        if (!isOnlyStatusChange) {
+          return res.status(403).json({
+            success: false,
+            message: 'Bu randevu 2 günden eski olduğu için sadece durum (status) değiştirilebilir. Tarih, personel veya not güncellenemez.',
+            appointmentDate: existingAppointment.appointmentDate,
+            allowedChange: 'Sadece status değiştirilebilir'
+          });
+        }
+      }
+    }
+
     if (staffId && staffId !== existingAppointment.staffId) {
       const staff = await prisma.staff.findFirst({
         where: {
@@ -1125,6 +1162,22 @@ export const deleteAppointment = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Randevu bulunamadı'
+      });
+    }
+
+    // 🔒 2 GÜN SONRA RANDEVU SİLME ENGELİ
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    twoDaysAgo.setHours(0, 0, 0, 0);
+    
+    const appointmentDateCheck = new Date(existingAppointment.appointmentDate);
+    appointmentDateCheck.setHours(0, 0, 0, 0);
+    
+    if (appointmentDateCheck < twoDaysAgo) {
+      return res.status(403).json({
+        success: false,
+        message: 'Bu randevu 2 günden eski olduğu için silinemez',
+        appointmentDate: existingAppointment.appointmentDate
       });
     }
 
@@ -2074,6 +2127,28 @@ export const completeAppointment = async (req, res) => {
         success: false,
         message: 'Bu randevu zaten tamamlanmış'
       });
+    }
+
+    // 🔒 2 GÜN SONRA RANDEVU TAMAMLAMA ENGELİ
+    // Sadece PLANNED durumundaki randevular tamamlanabilir
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    twoDaysAgo.setHours(0, 0, 0, 0);
+    
+    const appointmentDateCheck = new Date(appointment.appointmentDate);
+    appointmentDateCheck.setHours(0, 0, 0, 0);
+    
+    if (appointmentDateCheck < twoDaysAgo) {
+      // PLANNED dışındaki durumlar tamamlanamaz
+      if (appointment.status !== 'PLANNED') {
+        return res.status(403).json({
+          success: false,
+          message: `Bu randevu ${appointment.status} durumunda ve 2 günden eski olduğu için tamamlanamaz`,
+          appointmentDate: appointment.appointmentDate,
+          currentStatus: appointment.status
+        });
+      }
+      // PLANNED ise tamamlanabilir (izin ver)
     }
 
     // İptal edilmiş veya gelmemiş mi kontrol et

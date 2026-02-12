@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import app from './app.js';
 import prisma, { checkDatabaseConnection } from './lib/prisma.js';
 import { startReminderService } from './services/reminderService.js';
+import { startIncompleteAppointmentsService } from './services/incompleteAppointmentsService.js';
 
 dotenv.config();
 
@@ -42,6 +43,9 @@ async function startServer() {
     
     // 🔔 Hatırlatma servisini başlat
     startReminderService();
+    
+    // 📊 Tamamlanmamış randevu bildirim servisini başlat
+    startIncompleteAppointmentsService();
     
     return server;
     

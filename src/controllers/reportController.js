@@ -702,9 +702,7 @@ export const getCustomerLoyaltyReport = async (req, res) => {
     const loyaltyData = [];
 
     clients.forEach(client => {
-      if (client.sales.length === 0) return; // Hiç satış olmayan müşteri
-
-      // Müşteri metrikleri
+      // ✅ Satış yapmamış müşterileri de dahil et
       const purchaseCount = client.sales.length;
       
       // Toplam harcama (LTV) - Sadece COMPLETED ödemeler
@@ -717,9 +715,13 @@ export const getCustomerLoyaltyReport = async (req, res) => {
         totalSpent += paidForSale;
       });
 
-      // İlk ve son satış tarihi
-      const firstPurchaseDate = new Date(client.sales[0].saleDate);
-      const lastPurchaseDate = new Date(client.sales[client.sales.length - 1].saleDate);
+      // İlk ve son satış tarihi (satış yoksa müşteri oluşturma tarihini kullan)
+      const firstPurchaseDate = purchaseCount > 0 
+        ? new Date(client.sales[0].saleDate) 
+        : new Date(client.createdAt);
+      const lastPurchaseDate = purchaseCount > 0 
+        ? new Date(client.sales[client.sales.length - 1].saleDate)
+        : new Date(client.createdAt);
       
       // Müşteri yaşı (gün)
       const customerAgeInDays = Math.floor((now - firstPurchaseDate) / (1000 * 60 * 60 * 24));
@@ -779,13 +781,14 @@ export const getCustomerLoyaltyReport = async (req, res) => {
         totalSpent: parseFloat(totalSpent.toFixed(2)),
         averageOrderValue: parseFloat(averageOrderValue.toFixed(2)),
         firstPurchaseDate: firstPurchaseDate.toISOString().split('T')[0],
-        lastPurchaseDate: lastPurchaseDate.toISOString().split('T')[0],
+        lastPurchaseDate: purchaseCount > 0 ? lastPurchaseDate.toISOString().split('T')[0] : null,
         customerAgeInDays: customerAgeInDays,
-        daysSinceLastPurchase: daysSinceLastPurchase,
+        daysSinceLastPurchase: purchaseCount > 0 ? daysSinceLastPurchase : null,
         averagePurchaseFrequency: averagePurchaseFrequency ? parseFloat(averagePurchaseFrequency.toFixed(1)) : null,
         loyaltyScore: parseFloat(loyaltyScore.toFixed(1)),
         loyaltyLevel: loyaltyLevel,
-        churnRisk: churnRisk
+        churnRisk: churnRisk,
+        hasNoSales: purchaseCount === 0 // ✅ Satış yapmamış müşteri işareti
       });
     });
 
@@ -835,11 +838,18 @@ export const getCustomerLoyaltyReport = async (req, res) => {
       Düşük: filteredData.filter(c => c.churnRisk === 'Düşük').length
     };
 
+    // ✅ Satış yapmamış müşteri sayısı
+    const customersWithNoSales = loyaltyData.filter(c => c.purchaseCount === 0).length;
+    const customersWithSales = loyaltyData.filter(c => c.purchaseCount > 0).length;
+
     res.json({
       success: true,
       data: filteredData,
       summary: {
-        totalCustomers: filteredData.length,
+        totalCustomers: clients.length, // ✅ TÜM aktif müşteriler (259)
+        totalActiveCustomers: filteredData.length, // Raporda gösterilen müşteriler
+        customersWithSales: customersWithSales, // Satış yapmış müşteriler
+        customersWithNoSales: customersWithNoSales, // Satış yapmamış müşteriler
         totalLTV: parseFloat(totalLTV.toFixed(2)),
         averageLTV: parseFloat(averageLTV.toFixed(2)),
         totalPurchases: totalPurchases,
