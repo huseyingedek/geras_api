@@ -402,6 +402,7 @@ export const createSale = async (req, res) => {
       });
     }
 
+    // Satış tarihi - frontend'den gelen tarihi kullan veya şu anki zamanı al
     const finalSaleDate = saleDate ? new Date(saleDate) : new Date();
     
     if (finalSaleDate > new Date()) {
@@ -600,7 +601,9 @@ export const createSaleWithAppointment = async (req, res) => {
       });
     }
 
+    // Satış tarihi - frontend'den gelen tarihi kullan veya şu anki zamanı al
     const finalSaleDate = saleDate ? new Date(saleDate) : new Date();
+    
     if (finalSaleDate > new Date()) {
       return res.status(400).json({
         success: false,
@@ -1239,7 +1242,7 @@ export const addPaymentToSale = async (req, res) => {
       });
     }
 
-    // Ödeme tarihi - eğer verilmezse şu anki tarih
+    // Ödeme tarihi - frontend'den gelen tarihi kullan veya şu anki zamanı al
     const finalPaymentDate = paymentDate ? new Date(paymentDate) : new Date();
 
     const payment = await prisma.payments.create({

@@ -68,21 +68,30 @@ const createAdmin = async (req, res, next) => {
 
 const login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    // Geriye dönük uyumluluk: email veya emailOrPhone parametresi
+    const identifier = req.body.emailOrPhone || req.body.email;
+    const { password } = req.body;
     
-    if (!email || !password) {
-      return next(new AppError('Lütfen email ve şifre giriniz', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    // Email/telefon ve şifre kontrolü
+    if (!identifier || !password) {
+      return next(new AppError('Lütfen email/telefon ve şifre giriniz', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
     }
     
-    const user = await prisma.user.findUnique({
-      where: { email },
+    // Email veya telefon numarası ile kullanıcıyı bul
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: identifier },
+          { phone: identifier }
+        ]
+      },
       include: {
         account: true
       }
     });
     
     if (!user || !(await bcrypt.compare(password, user.password))) {
-      return next(new AppError('Hatalı email veya şifre', 401, ErrorCodes.USER_AUTHENTICATION_FAILED));
+      return next(new AppError('Hatalı email/telefon veya şifre', 401, ErrorCodes.USER_AUTHENTICATION_FAILED));
     }
     
     if (user.role !== 'ADMIN' && user.accountId) {
