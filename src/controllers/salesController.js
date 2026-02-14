@@ -1216,21 +1216,7 @@ export const addPaymentToSale = async (req, res) => {
       });
     }
 
-    // 🔒 2 GÜN SONRA ÖDEME EKLEMENİN ENGELLENMESİ
-    const twoDaysAgo = new Date();
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-    twoDaysAgo.setHours(0, 0, 0, 0);
-    
-    const saleDate = new Date(sale.saleDate);
-    saleDate.setHours(0, 0, 0, 0);
-    
-    if (saleDate < twoDaysAgo) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bu satış 2 günden eski olduğu için ödeme eklenemez',
-        saleDate: sale.saleDate
-      });
-    }
+    // ✅ 2 GÜNLÜK KISITLAMA KALDIRILDI - Ödemeler her zaman eklenebilir
 
     const totalPaid = sale.payments.reduce((sum, payment) => sum + parseFloat(payment.amountPaid), 0);
     const remainingAmount = parseFloat(sale.totalAmount) - totalPaid;
@@ -1785,21 +1771,7 @@ export const updatePaymentStatus = async (req, res) => {
       });
     }
 
-    // 🔒 2 GÜN SONRA ÖDEME GÜNCELLEME ENGELİ
-    const twoDaysAgo = new Date();
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-    twoDaysAgo.setHours(0, 0, 0, 0);
-    
-    const paymentDateCheck = new Date(payment.paymentDate);
-    paymentDateCheck.setHours(0, 0, 0, 0);
-    
-    if (paymentDateCheck < twoDaysAgo) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bu ödeme 2 günden eski olduğu için güncellenemez',
-        paymentDate: payment.paymentDate
-      });
-    }
+    // ✅ 2 GÜNLÜK KISITLAMA KALDIRILDI - Ödemeler her zaman güncellenebilir
 
     // Güncelleme verilerini hazırla
     const updateData = {
