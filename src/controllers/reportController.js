@@ -65,10 +65,28 @@ export const getIncomeExpenseSummary = async (req, res) => {
       
       switch (period) {
         case 'today':
-          const todayStart = new Date();
-          todayStart.setHours(0, 0, 0, 0);
-          const todayEnd = new Date();
-          todayEnd.setHours(23, 59, 59, 999);
+          // Bugünün başlangıcı ve sonu - UTC tarih olarak
+          const todayNow = new Date();
+          const todayStart = new Date(Date.UTC(
+            todayNow.getUTCFullYear(),
+            todayNow.getUTCMonth(),
+            todayNow.getUTCDate(),
+            0, 0, 0, 0
+          ));
+          const todayEnd = new Date(Date.UTC(
+            todayNow.getUTCFullYear(),
+            todayNow.getUTCMonth(),
+            todayNow.getUTCDate(),
+            23, 59, 59, 999
+          ));
+          
+          console.log('🗓️ TODAY Hesaplama:');
+          console.log('  - Bugün (now):', todayNow.toISOString());
+          console.log('  - UTC Date:', todayNow.getUTCDate());
+          console.log('  - UTC Month:', todayNow.getUTCMonth());
+          console.log('  - UTC Year:', todayNow.getUTCFullYear());
+          console.log('  - todayStart (ISO):', todayStart.toISOString());
+          console.log('  - todayEnd (ISO):', todayEnd.toISOString());
           
           dateFilter = {
             gte: todayStart,
@@ -78,12 +96,20 @@ export const getIncomeExpenseSummary = async (req, res) => {
           break;
           
         case 'yesterday':
-          const yesterdayStart = new Date();
-          yesterdayStart.setDate(now.getDate() - 1);
-          yesterdayStart.setHours(0, 0, 0, 0);
-          const yesterdayEnd = new Date();
-          yesterdayEnd.setDate(now.getDate() - 1);
-          yesterdayEnd.setHours(23, 59, 59, 999);
+          // Dünün başlangıcı ve sonu - UTC tarih olarak
+          const yesterdayNow = new Date();
+          const yesterdayStart = new Date(Date.UTC(
+            yesterdayNow.getUTCFullYear(),
+            yesterdayNow.getUTCMonth(),
+            yesterdayNow.getUTCDate() - 1,
+            0, 0, 0, 0
+          ));
+          const yesterdayEnd = new Date(Date.UTC(
+            yesterdayNow.getUTCFullYear(),
+            yesterdayNow.getUTCMonth(),
+            yesterdayNow.getUTCDate() - 1,
+            23, 59, 59, 999
+          ));
           
           dateFilter = {
             gte: yesterdayStart,
@@ -93,15 +119,30 @@ export const getIncomeExpenseSummary = async (req, res) => {
           break;
           
         case 'this_week':
-          const weekStart = new Date();
-          const dayOfWeek = weekStart.getDay();
-          const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-          weekStart.setDate(weekStart.getDate() - daysToMonday);
-          weekStart.setHours(0, 0, 0, 0);
+          // Bu haftanın Pazartesi'si ve bugünün sonu - UTC olarak
+          const weekNow = new Date();
+          
+          // UTC tarihine göre haftanın günü
+          const weekDayOfWeek = weekNow.getUTCDay();
+          const daysToMonday = weekDayOfWeek === 0 ? 6 : weekDayOfWeek - 1;
+          
+          const weekStartUTC = new Date(Date.UTC(
+            weekNow.getUTCFullYear(),
+            weekNow.getUTCMonth(),
+            weekNow.getUTCDate() - daysToMonday,
+            0, 0, 0, 0
+          ));
+          
+          const weekEnd = new Date(Date.UTC(
+            weekNow.getUTCFullYear(),
+            weekNow.getUTCMonth(),
+            weekNow.getUTCDate(),
+            23, 59, 59, 999
+          ));
           
           dateFilter = {
-            gte: weekStart,
-            lte: now
+            gte: weekStartUTC,
+            lte: weekEnd
           };
           periodLabel = 'Bu Hafta';
           break;
