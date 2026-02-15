@@ -18,4 +18,10 @@ router.route('/accounts/:id')
 // Detaylı işletme bilgileri (admin paneli için)
 router.get('/accounts/:id/details', adminController.getAccountDetails);
 
+// 🎯 DEMO HESAP YÖNETİMİ (Admin)
+router.get('/demo-accounts/pending', adminController.getPendingDemoAccounts);
+router.get('/demo-accounts', adminController.getAllDemoAccounts);
+router.post('/demo-accounts/:id/approve', adminController.approveDemoAccount);
+router.post('/demo-accounts/:id/reject', adminController.rejectDemoAccount);
+
 export default router; 

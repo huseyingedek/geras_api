@@ -3,6 +3,7 @@ import app from './app.js';
 import prisma, { checkDatabaseConnection } from './lib/prisma.js';
 import { startReminderService } from './services/reminderService.js';
 import { startIncompleteAppointmentsService } from './services/incompleteAppointmentsService.js';
+import { startDemoCronJob, initialCheck } from './utils/demoCronJob.js';
 
 dotenv.config();
 
@@ -46,6 +47,12 @@ async function startServer() {
     
     // 📊 Tamamlanmamış randevu bildirim servisini başlat
     startIncompleteAppointmentsService();
+    
+    // 🎯 Demo hesap süre kontrolü servisini başlat
+    startDemoCronJob();
+    
+    // İlk kontrol (opsiyonel) - GEÇICI KAPALI (migration sonrası aç)
+    // await initialCheck();
     
     return server;
     

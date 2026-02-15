@@ -34,6 +34,11 @@ const createAccount = catchAsync(async (req, res, next) => {
     return next(new AppError('İşletme sahibi bilgileri eksik', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
   }
   
+  // 🎯 Paket validasyonu (admin normal hesap oluştururken)
+  if (subscriptionPlan && !['STARTER', 'PROFESSIONAL', 'PREMIUM'].includes(subscriptionPlan)) {
+    return next(new AppError('Geçerli bir paket seçiniz (STARTER, PROFESSIONAL, PREMIUM)', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+  
   if (email) {
     const existingAccount = await prisma.accounts.findUnique({
       where: { email }
@@ -60,7 +65,7 @@ const createAccount = catchAsync(async (req, res, next) => {
         email,
         phone,
         businessType: businessType || 'SESSION_BASED',
-        subscriptionPlan,
+        subscriptionPlan: subscriptionPlan || 'PROFESSIONAL', // Varsayılan PROFESSIONAL
         isActive: true,
         smsEnabled: true, // SMS servisi varsayılan açık
         reminderEnabled: true, // Hatırlatma varsayılan açık
@@ -266,6 +271,11 @@ const updateAccount = catchAsync(async (req, res, next) => {
 
   if (ownerPassword && ownerPassword.length < 6) {
     return next(new AppError('Şifre en az 6 karakter olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  // 🎯 Paket validasyonu
+  if (subscriptionPlan && !['STARTER', 'PROFESSIONAL', 'PREMIUM', 'DEMO'].includes(subscriptionPlan)) {
+    return next(new AppError('Geçerli bir paket seçiniz (STARTER, PROFESSIONAL, PREMIUM)', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
   }
 
   // Telefon numarası validasyonu
@@ -620,6 +630,177 @@ const getAccountDetails = catchAsync(async (req, res, next) => {
   });
 });
 
+// 🎯 DEMO HESAPLARI LİSTELE (Admin için)
+const getPendingDemoAccounts = catchAsync(async (req, res, next) => {
+  // Onay bekleyen demo hesapları getir
+  const pendingDemos = await prisma.accounts.findMany({
+    where: {
+      isDemoAccount: true,
+      demoStatus: 'PENDING_APPROVAL'
+    },
+    include: {
+      users: {
+        where: {
+          role: 'OWNER'
+        },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          phone: true,
+          createdAt: true
+        }
+      },
+      _count: {
+        select: {
+          users: true,
+          staff: true,
+          clients: true,
+          services: true,
+          appointments: true,
+          sales: true
+        }
+      }
+    },
+    orderBy: {
+      demoExpiresAt: 'asc' // Süresi dolmak üzere olanlar önce
+    }
+  });
+
+  res.json({
+    status: 'success',
+    results: pendingDemos.length,
+    data: pendingDemos
+  });
+});
+
+// 🎯 TÜM DEMO HESAPLARI LİSTELE (Admin için - filtreleme ile)
+const getAllDemoAccounts = catchAsync(async (req, res, next) => {
+  const { demoStatus } = req.query;
+
+  const whereClause = {
+    isDemoAccount: true
+  };
+
+  if (demoStatus) {
+    whereClause.demoStatus = demoStatus;
+  }
+
+  const demoAccounts = await prisma.accounts.findMany({
+    where: whereClause,
+    include: {
+      users: {
+        where: {
+          role: 'OWNER'
+        },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          phone: true,
+          createdAt: true
+        }
+      },
+      _count: {
+        select: {
+          users: true,
+          staff: true,
+          clients: true,
+          services: true,
+          appointments: true,
+          sales: true
+        }
+      }
+    },
+    orderBy: {
+      createdAt: 'desc'
+    }
+  });
+
+  res.json({
+    status: 'success',
+    results: demoAccounts.length,
+    data: demoAccounts
+  });
+});
+
+// 🎯 DEMO HESAP ONAYLAMA (Admin)
+const approveDemoAccount = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { subscriptionPlan } = req.body;
+
+  // Paket kontrolü
+  if (!subscriptionPlan || !['STARTER', 'PROFESSIONAL', 'PREMIUM'].includes(subscriptionPlan)) {
+    return next(new AppError('Geçerli bir paket seçiniz (STARTER, PROFESSIONAL, PREMIUM)', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  const account = await prisma.accounts.findUnique({
+    where: { id: parseInt(id) }
+  });
+
+  if (!account) {
+    return next(new AppError('İşletme hesabı bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+  }
+
+  if (!account.isDemoAccount) {
+    return next(new AppError('Bu hesap demo hesabı değil', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  if (account.demoStatus !== 'PENDING_APPROVAL') {
+    return next(new AppError('Bu hesap onay bekleyen durumda değil', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  // Hesabı onayla ve paketi ayarla
+  const updatedAccount = await prisma.accounts.update({
+    where: { id: parseInt(id) },
+    data: {
+      demoStatus: 'APPROVED',
+      subscriptionPlan: subscriptionPlan,
+      isActive: true,
+      demoExpiresAt: null // Artık demo değil, süre kısıtı yok
+    }
+  });
+
+  res.json({
+    status: 'success',
+    data: updatedAccount,
+    message: `Demo hesap onaylandı ve ${subscriptionPlan} paketine yükseltildi`
+  });
+});
+
+// 🎯 DEMO HESAP REDDETME/KISITLAMA (Admin)
+const rejectDemoAccount = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+
+  const account = await prisma.accounts.findUnique({
+    where: { id: parseInt(id) }
+  });
+
+  if (!account) {
+    return next(new AppError('İşletme hesabı bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+  }
+
+  if (!account.isDemoAccount) {
+    return next(new AppError('Bu hesap demo hesabı değil', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  // Hesabı kısıtla
+  const updatedAccount = await prisma.accounts.update({
+    where: { id: parseInt(id) },
+    data: {
+      demoStatus: 'RESTRICTED',
+      isActive: false
+    }
+  });
+
+  res.json({
+    status: 'success',
+    data: updatedAccount,
+    message: 'Demo hesap reddedildi ve kısıtlandı'
+  });
+});
+
 export {
   createAccount,
   getAllAccounts,
@@ -627,5 +808,10 @@ export {
   updateAccount,
   deleteAccount,
   updateMyBusiness,
-  getAccountDetails
+  getAccountDetails,
+  // 🎯 DEMO YÖNETİMİ
+  getPendingDemoAccounts,
+  getAllDemoAccounts,
+  approveDemoAccount,
+  rejectDemoAccount
 }; 

@@ -14,13 +14,16 @@ model Accounts {
   email                String?               @unique @map("Email")
   phone                String?               @map("Phone")
   businessType         BusinessType          @default(SESSION_BASED) @map("BusinessType")
-  subscriptionPlan     String?               @map("SubscriptionPlan")
+  subscriptionPlan     String?               @default("PROFESSIONAL") @map("SubscriptionPlan")
   createdAt            DateTime              @default(now()) @map("CreatedAt")
   updatedAt            DateTime              @default(now()) @updatedAt @map("UpdatedAt")
   isActive             Boolean               @default(true) @map("IsActive")
   smsEnabled           Boolean               @default(true) @map("SMSEnabled")
   reminderEnabled      Boolean               @default(true) @map("ReminderEnabled")
   reminderHours        Int                   @default(24) @map("ReminderHours")
+  isDemoAccount        Boolean               @default(false) @map("IsDemoAccount")
+  demoExpiresAt        DateTime?             @map("DemoExpiresAt")
+  demoStatus           DemoStatus            @default(ACTIVE) @map("DemoStatus")
   appointments         Appointments[]
   clients              Clients[]
   ExpenseCategories    ExpenseCategories[]
@@ -39,6 +42,7 @@ model Accounts {
   clientNotes          ClientNotes[]
 
   @@index([smsEnabled], map: "idx_accounts_sms_enabled")
+  @@index([isDemoAccount, demoStatus], map: "idx_accounts_demo")
   @@map("Accounts")
 }
 
@@ -440,6 +444,21 @@ enum ReportStatus {
   FAILED
 }
 
+enum DemoStatus {
+  ACTIVE          // Demo aktif (ilk 2 gün)
+  PENDING_APPROVAL // 2 gün doldu, admin onayı bekliyor
+  APPROVED        // Admin onayladı, ücretli pakete geçti
+  EXPIRED         // Demo süresi doldu ve devam etmedi
+  RESTRICTED      // Hesap kısıtlandı
+}
+
+enum SubscriptionPlan {
+  DEMO            // Demo hesap (2 gün)
+  STARTER         // Başlangıç Paketi (499 TL/ay)
+  PROFESSIONAL    // Profesyonel Paketi (899 TL/ay)
+  PREMIUM         // Premium Paket (1.499 TL/ay)
+}
+
 model ClientNotes {
   id        Int      @id @default(autoincrement()) @map("NoteID")
   accountId Int      @map("AccountID")
@@ -457,4 +476,18 @@ model ClientNotes {
   @@index([staffId], map: "idx_client_notes_staff")
   @@index([createdAt], map: "idx_client_notes_created")
   @@map("ClientNotes")
+}
+
+model PhoneVerification {
+  id            Int      @id @default(autoincrement()) @map("VerificationID")
+  phone         String   @map("Phone")
+  code          String   @map("Code")
+  expiresAt     DateTime @map("ExpiresAt")
+  isVerified    Boolean  @default(false) @map("IsVerified")
+  verifiedAt    DateTime? @map("VerifiedAt")
+  createdAt     DateTime @default(now()) @map("CreatedAt")
+
+  @@index([phone, code], map: "idx_phone_verification")
+  @@index([expiresAt], map: "idx_verification_expiry")
+  @@map("PhoneVerification")
 }

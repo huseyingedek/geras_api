@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GERAS - 2 Günlük Ücretsiz Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #667eea;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .header .badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .features {
+            background: #f8f9ff;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .features h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .features ul {
+            list-style: none;
+        }
+
+        .features li {
+            padding: 8px 0;
+            color: #555;
+            display: flex;
+            align-items: center;
+        }
+
+        .features li::before {
+            content: "✓";
+            color: #667eea;
+            font-weight: bold;
+            margin-right: 10px;
+            font-size: 18px;
+        }
+
+        .form-section {
+            margin-bottom: 20px;
+        }
+
+        .form-section h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .form-group label .required {
+            color: #e74c3c;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e1e8ed;
+            border-radius: 8px;
+            font-size: 15px;
+            transition: all 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .btn-demo {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 20px;
+        }
+
+        .btn-demo:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-demo:active {
+            transform: translateY(0);
+        }
+
+        .btn-demo:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .note {
+            background: #fff3cd;
+            border: 1px solid #ffeeba;
+            color: #856404;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 25px;
+            }
+
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 GERAS SYSTEM</h1>
+            <div class="badge">🎁 2 GÜN ÜCRETSİZ DEMO</div>
+            <p>Sistemi 2 gün boyunca hiçbir ücret ödemeden test edin!</p>
+        </div>
+
+        <div class="features">
+            <h3>✨ Demo'da Neler Var?</h3>
+            <ul>
+                <li>Sınırsız müşteri ve randevu ekleme</li>
+                <li>Tüm özelliklere tam erişim</li>
+                <li>Gerçek zamanlı raporlar ve analizler</li>
+                <li>SMS hatırlatma sistemi (50 SMS hediye)</li>
+                <li>Kredi kartı gerektirmez</li>
+                <li>2 gün sonra admin onayına düşer</li>
+            </ul>
+        </div>
+
+        <div id="alertBox" class="alert"></div>
+
+        <form id="demoForm">
+            <!-- İşletme Bilgileri -->
+            <div class="form-section">
+                <h3>🏢 İşletme Bilgileri</h3>
+                
+                <div class="form-group">
+                    <label>İşletme Adı <span class="required">*</span></label>
+                    <input type="text" id="businessName" name="businessName" placeholder="Örn: Güzellik Salonu A.Ş." required>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>İletişim Kişisi</label>
+                        <input type="text" id="contactPerson" name="contactPerson" placeholder="Örn: Ahmet Yılmaz">
+                    </div>
+
+                    <div class="form-group">
+                        <label>İşletme Tipi <span class="required">*</span></label>
+                        <select id="businessType" name="businessType" required>
+                            <option value="SESSION_BASED">Seanslı (Lazer, Masaj vb.)</option>
+                            <option value="NON_SESSION_BASED">Seansız (Kuaför, Berber)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>İşletme Email</label>
+                        <input type="email" id="businessEmail" name="email" placeholder="info@isletme.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label>İşletme Telefon</label>
+                        <input type="tel" id="businessPhone" name="phone" placeholder="+90 532 123 45 67">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Hesap Sahibi Bilgileri -->
+            <div class="form-section">
+                <h3>👤 Hesap Sahibi Bilgileri</h3>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Kullanıcı Adı <span class="required">*</span></label>
+                        <input type="text" id="ownerUsername" name="ownerUsername" placeholder="Örn: ahmetyilmaz" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Telefon</label>
+                        <input type="tel" id="ownerPhone" name="ownerPhone" placeholder="+90 532 999 88 77">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Email <span class="required">*</span></label>
+                    <input type="email" id="ownerEmail" name="ownerEmail" placeholder="ahmet@example.com" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Şifre <span class="required">*</span></label>
+                    <input type="password" id="ownerPassword" name="ownerPassword" placeholder="En az 6 karakter" minlength="6" required>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-demo" id="submitBtn">
+                🎉 2 Günlük Ücretsiz Demo'yu Başlat
+            </button>
+        </form>
+
+        <div class="loading" id="loading">
+            <div class="loading-spinner"></div>
+            <p>Hesabınız oluşturuluyor...</p>
+        </div>
+
+        <div class="note">
+            <strong>📌 Not:</strong> 2 gün sonunda demo süreniz dolacaktır. Devam etmek isterseniz, hesabınız admin onayına düşecek ve size uygun paket seçilecektir. Kredi kartı bilgisi gerekmez.
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://your-api-url.com/api'; // API URL'inizi buraya yazın
+        
+        const form = document.getElementById('demoForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+        const alertBox = document.getElementById('alertBox');
+
+        // Alert göster
+        function showAlert(message, type) {
+            alertBox.textContent = message;
+            alertBox.className = `alert ${type}`;
+            alertBox.style.display = 'block';
+            
+            // 5 saniye sonra gizle
+            setTimeout(() => {
+                alertBox.style.display = 'none';
+            }, 5000);
+        }
+
+        // Form submit
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // Loading başlat
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Oluşturuluyor...';
+            loading.style.display = 'block';
+            alertBox.style.display = 'none';
+
+            // Form verilerini topla
+            const formData = {
+                businessName: document.getElementById('businessName').value,
+                contactPerson: document.getElementById('contactPerson').value || null,
+                email: document.getElementById('businessEmail').value || null,
+                phone: document.getElementById('businessPhone').value || null,
+                businessType: document.getElementById('businessType').value,
+                ownerUsername: document.getElementById('ownerUsername').value,
+                ownerEmail: document.getElementById('ownerEmail').value,
+                ownerPassword: document.getElementById('ownerPassword').value,
+                ownerPhone: document.getElementById('ownerPhone').value || null
+            };
+
+            try {
+                const response = await fetch(`${API_URL}/auth/create-demo`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    // Başarılı
+                    showAlert('🎉 Tebrikler! Demo hesabınız oluşturuldu. Yönlendiriliyorsunuz...', 'success');
+                    
+                    // Token'ı localStorage'a kaydet
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('user', JSON.stringify(data.data.user));
+
+                    // 2 saniye sonra dashboard'a yönlendir
+                    setTimeout(() => {
+                        window.location.href = '/dashboard'; // Dashboard URL'inizi yazın
+                    }, 2000);
+
+                } else {
+                    // Hata
+                    const errorMessage = data.error?.message || data.message || 'Bir hata oluştu';
+                    showAlert('❌ ' + errorMessage, 'error');
+                }
+
+            } catch (error) {
+                console.error('Demo hesap oluşturma hatası:', error);
+                showAlert('❌ Sunucu ile bağlantı kurulamadı. Lütfen tekrar deneyin.', 'error');
+            } finally {
+                // Loading bitir
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🎉 2 Günlük Ücretsiz Demo\'yu Başlat';
+                loading.style.display = 'none';
+            }
+        });
+
+        // Telefon formatı (opsiyonel)
+        const phoneInputs = document.querySelectorAll('input[type="tel"]');
+        phoneInputs.forEach(input => {
+            input.addEventListener('input', (e) => {
+                let value = e.target.value.replace(/\D/g, '');
+                if (value.length > 0 && !value.startsWith('0')) {
+                    value = '0' + value;
+                }
+                e.target.value = value;
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,424 @@
+{
+  "info": {
+    "name": "GERAS - Demo Account System",
+    "description": "Demo hesap yönetimi için API endpoint'leri",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. SMS Doğrulama Kodu Gönder (Public)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"+905551234567\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/send-verification-code",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "send-verification-code"
+          ]
+        },
+        "description": "Telefon numarasına 6 haneli doğrulama kodu gönderir. Kod 5 dakika geçerlidir."
+      },
+      "response": []
+    },
+    {
+      "name": "2. SMS Kodunu Doğrula (Public)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"+905551234567\",\n  \"code\": \"123456\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/verify-code",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "verify-code"
+          ]
+        },
+        "description": "6 haneli SMS kodunu doğrular. Başarılı olursa telefon doğrulanmış olarak işaretlenir."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Demo Hesap Oluştur (SMS Doğrulamalı)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"businessName\": \"Güzellik Salonu Demo\",\n  \"contactPerson\": \"Ahmet Yılmaz\",\n  \"email\": \"info@salonexample.com\",\n  \"phone\": \"+90 532 123 45 67\",\n  \"businessType\": \"SESSION_BASED\",\n  \"ownerUsername\": \"ahmetyilmaz\",\n  \"ownerEmail\": \"ahmet@example.com\",\n  \"ownerPassword\": \"Demo123!\",\n  \"ownerPhone\": \"+905551234567\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/create-demo",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "create-demo"
+          ]
+        },
+        "description": "2 günlük demo hesap oluşturur. ownerPhone SMS ile doğrulanmış olmalıdır. Token döner ve otomatik login olur."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Demo Hesap Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"businessName\": \"Güzellik Salonu Demo\",\n  \"contactPerson\": \"Ahmet Yılmaz\",\n  \"email\": \"info@salonexample.com\",\n  \"phone\": \"+90 532 123 45 67\",\n  \"businessType\": \"SESSION_BASED\",\n  \"ownerUsername\": \"ahmetyilmaz\",\n  \"ownerEmail\": \"ahmet@example.com\",\n  \"ownerPassword\": \"Demo123!\",\n  \"ownerPhone\": \"+90 532 999 88 77\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/create-demo",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "create-demo"
+          ]
+        },
+        "description": "2 günlük demo hesap oluşturur. Token döner ve otomatik login olur."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Demo Hesap Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"ahmet@example.com\",\n  \"password\": \"Demo123!\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Demo hesap ile login. Süre kontrolü yapılır."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Kullanıcı Bilgisini Al (Demo Durum Kontrolü)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ownerToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "me"
+          ]
+        },
+        "description": "Kullanıcı ve hesap bilgilerini döner. Demo durumu ve kalan süre görünür."
+      },
+      "response": []
+    },
+    {
+      "name": "6. Onay Bekleyen Demo Hesapları (Admin)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/demo-accounts/pending",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "demo-accounts",
+            "pending"
+          ]
+        },
+        "description": "PENDING_APPROVAL durumundaki demo hesapları listeler (sadece ADMIN)."
+      },
+      "response": []
+    },
+    {
+      "name": "7. Tüm Demo Hesapları Listele (Admin)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/demo-accounts?demoStatus=ACTIVE",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "demo-accounts"
+          ],
+          "query": [
+            {
+              "key": "demoStatus",
+              "value": "ACTIVE",
+              "description": "ACTIVE, PENDING_APPROVAL, APPROVED, EXPIRED, RESTRICTED"
+            }
+          ]
+        },
+        "description": "Tüm demo hesapları listeler. demoStatus ile filtreleme yapılabilir."
+      },
+      "response": []
+    },
+    {
+      "name": "8. Demo Hesap Onayla - STARTER (Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"subscriptionPlan\": \"STARTER\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/demo-accounts/{{demoAccountId}}/approve",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "demo-accounts",
+            "{{demoAccountId}}",
+            "approve"
+          ]
+        },
+        "description": "Demo hesabı STARTER paketine (499 TL/ay) yükseltir."
+      },
+      "response": []
+    },
+    {
+      "name": "9. Demo Hesap Onayla - PROFESSIONAL (Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"subscriptionPlan\": \"PROFESSIONAL\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/demo-accounts/{{demoAccountId}}/approve",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "demo-accounts",
+            "{{demoAccountId}}",
+            "approve"
+          ]
+        },
+        "description": "Demo hesabı PROFESSIONAL paketine (899 TL/ay) yükseltir."
+      },
+      "response": []
+    },
+    {
+      "name": "10. Demo Hesap Onayla - PREMIUM (Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"subscriptionPlan\": \"PREMIUM\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/demo-accounts/{{demoAccountId}}/approve",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "demo-accounts",
+            "{{demoAccountId}}",
+            "approve"
+          ]
+        },
+        "description": "Demo hesabı PREMIUM paketine (1.499 TL/ay) yükseltir."
+      },
+      "response": []
+    },
+    {
+      "name": "11. Demo Hesap Reddet (Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"Şüpheli aktivite tespit edildi\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/demo-accounts/{{demoAccountId}}/reject",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "demo-accounts",
+            "{{demoAccountId}}",
+            "reject"
+          ]
+        },
+        "description": "Demo hesabı reddeder ve kısıtlar. isActive = false olur."
+      },
+      "response": []
+    },
+    {
+      "name": "12. Tüm İşletmeleri Listele (Demo Filtresi)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/accounts",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "accounts"
+          ]
+        },
+        "description": "Tüm işletmeleri listeler (demo ve normal hesaplar)."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "your-admin-jwt-token-here",
+      "type": "string"
+    },
+    {
+      "key": "ownerToken",
+      "value": "your-owner-jwt-token-here",
+      "type": "string"
+    },
+    {
+      "key": "demoAccountId",
+      "value": "1",
+      "type": "string"
+    }
+  ]
+}

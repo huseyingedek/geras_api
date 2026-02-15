@@ -278,4 +278,52 @@ Personel: ${staffName}
 Zamanında gelmenizi rica eder, teşekkür ederiz.
 
 İyi günler dileriz.`;
+};
+
+/**
+ * SMS dogrulama kodu gonder
+ * @param {string} phone - Telefon numarası
+ * @param {string} code - 6 haneli doğrulama kodu
+ * @returns {Promise<object>}
+ */
+export const sendVerificationSMS = async (phone, code) => {
+  const message = `GERAS Dogrulama Kodu: ${code}
+
+Bu kodu kimseyle paylasmayiniz.
+
+Kod 5 dakika icin gecerlidir.`;
+
+  return await sendSMS(phone, message);
+};
+
+/**
+ * 6 haneli rastgele dogrulama kodu olustur
+ * @returns {string}
+ */
+export const generateVerificationCode = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+/**
+ * Admin'e demo hesap bildirimi gonder
+ * @param {object} demoData - Demo hesap bilgileri
+ * @returns {Promise<object>}
+ */
+export const sendDemoAccountNotification = async (demoData) => {
+  const { businessName, contactPerson, phone, email } = demoData;
+  
+  const adminPhone = process.env.ADMIN_NOTIFICATION_PHONE || '905354676801';
+  
+  const message = `🎯 YENI DEMO HESAP ACILDI!
+
+Isletme: ${businessName}
+Yetkili: ${contactPerson}
+Tel: ${phone || 'Yok'}
+Email: ${email || 'Yok'}
+
+2 gunluk demo basladi.
+
+GERAS System`;
+
+  return await sendSMS(adminPhone, message);
 }; 

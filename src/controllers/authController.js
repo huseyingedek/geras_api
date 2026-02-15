@@ -6,6 +6,9 @@ import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
 import prisma from '../lib/prisma.js';
 import { sendPasswordResetEmail } from '../utils/emailService.js';
+import { addBasicPermissionsToAccount } from '../utils/permissionUtils.js';
+import { isPhoneVerified } from './verificationController.js';
+import { sendDemoAccountNotification } from '../utils/smsService.js';
 
 const signToken = (id) => {
   return jwt.sign(
@@ -94,9 +97,40 @@ const login = async (req, res, next) => {
       return next(new AppError('Hatalı email/telefon veya şifre', 401, ErrorCodes.USER_AUTHENTICATION_FAILED));
     }
     
+    // 🎯 Demo hesap kontrolleri
     if (user.role !== 'ADMIN' && user.accountId) {
       if (!user.account || user.account.isActive === false) {
+        // Demo hesap kontrolü
+        if (user.account && user.account.isDemoAccount) {
+          const demoStatus = user.account.demoStatus;
+          
+          if (demoStatus === 'PENDING_APPROVAL') {
+            return next(new AppError('Demo süreniz dolmuştur. Hesabınız admin onayı bekliyor. Lütfen bekleyiniz.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
+          }
+          
+          if (demoStatus === 'EXPIRED' || demoStatus === 'RESTRICTED') {
+            return next(new AppError('Demo süreniz sona ermiştir. Devam etmek için lütfen yetkili kişi ile iletişime geçin.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
+          }
+        }
+        
         return next(new AppError('İşletmeniz kısıtlanmıştır. Lütfen yetkili kişi ile iletişime geçin.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
+      }
+      
+      // Demo süre kontrolü (aktif demo hesaplar için)
+      if (user.account.isDemoAccount && user.account.demoStatus === 'ACTIVE') {
+        const now = new Date();
+        if (user.account.demoExpiresAt && user.account.demoExpiresAt <= now) {
+          // Süre dolmuş ama henüz cron çalışmamış, şimdi güncelle
+          await prisma.accounts.update({
+            where: { id: user.accountId },
+            data: {
+              demoStatus: 'PENDING_APPROVAL',
+              isActive: false
+            }
+          });
+          
+          return next(new AppError('Demo süreniz dolmuştur. Hesabınız admin onayına gönderildi. Lütfen bekleyiniz.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
+        }
       }
     }
     
@@ -356,13 +390,140 @@ const resetPassword = async (req, res, next) => {
   }
 };
 
+// 🎯 DEMO HESAP OLUŞTURMA (Tanıtım Sitesinden)
+const createDemoAccount = async (req, res, next) => {
+  try {
+    const { 
+      businessName, 
+      contactPerson, 
+      email, 
+      phone, 
+      businessType,
+      ownerUsername,
+      ownerEmail,
+      ownerPassword,
+      ownerPhone
+    } = req.body;
+    
+    // ✅ Validasyonlar
+    if (!businessName) {
+      return next(new AppError('İşletme adı gereklidir', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+    
+    if (!ownerUsername || !ownerEmail || !ownerPassword) {
+      return next(new AppError('İşletme sahibi bilgileri eksik', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+    
+    if (!ownerPhone) {
+      return next(new AppError('Telefon numarası gereklidir', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+    
+    // 🔐 Telefon numarası doğrulanmış mı kontrol et
+    const phoneVerified = await isPhoneVerified(ownerPhone);
+    if (!phoneVerified) {
+      return next(new AppError('Telefon numarası doğrulanmamış. Lütfen önce SMS doğrulaması yapın', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+    
+    // Email kontrolü - işletme
+    if (email) {
+      const existingAccount = await prisma.accounts.findUnique({
+        where: { email }
+      });
+      
+      if (existingAccount) {
+        return next(new AppError('Bu email adresi zaten kullanılmaktadır', 400, ErrorCodes.DB_DUPLICATE_ENTRY));
+      }
+    }
+    
+    // Email kontrolü - kullanıcı
+    const existingUser = await prisma.user.findUnique({
+      where: { email: ownerEmail }
+    });
+    
+    if (existingUser) {
+      return next(new AppError('Bu kullanıcı email adresi zaten kullanılmaktadır', 400, ErrorCodes.USER_ALREADY_EXISTS));
+    }
+    
+    // 🎯 2 gün sonrasını hesapla (demo süre sonu)
+    const demoExpiresAt = new Date();
+    demoExpiresAt.setDate(demoExpiresAt.getDate() + 2);
+    
+    // Transaction ile oluştur
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Demo işletme hesabı oluştur
+      const newAccount = await tx.accounts.create({
+        data: {
+          businessName,
+          contactPerson,
+          email,
+          phone,
+          businessType: businessType || 'SESSION_BASED',
+          subscriptionPlan: 'DEMO', // Demo planı
+          isActive: true,
+          isDemoAccount: true, // 🎯 Demo işareti
+          demoExpiresAt: demoExpiresAt, // 2 gün sonra
+          demoStatus: 'ACTIVE', // Aktif demo
+          smsEnabled: true,
+          reminderEnabled: true,
+          reminderHours: 24
+        }
+      });
+      
+      // 2. Temel izinleri ekle
+      await addBasicPermissionsToAccount(newAccount.id, tx);
+      
+      // 3. Owner kullanıcı oluştur
+      const hashedPassword = await bcrypt.hash(ownerPassword, 12);
+      
+      const owner = await tx.user.create({
+        data: {
+          username: ownerUsername,
+          email: ownerEmail,
+          password: hashedPassword,
+          phone: ownerPhone,
+          role: 'OWNER',
+          accountId: newAccount.id
+        }
+      });
+      
+      owner.password = undefined;
+      
+      return { account: newAccount, owner };
+    }, {
+      timeout: 30000,
+    });
+    
+    // 🎯 Admin'e SMS bildirimi gönder
+    try {
+      await sendDemoAccountNotification({
+        businessName: result.account.businessName,
+        contactPerson: result.account.contactPerson,
+        phone: result.account.phone,
+        email: result.account.email
+      });
+      console.log('✅ Admin bildirim SMS gönderildi');
+    } catch (smsError) {
+      // SMS hatası demo hesap oluşturmayı engellemez
+      console.warn('⚠️ Admin bildirim SMS gönderilemedi:', smsError.message);
+    }
+    
+    // Token oluştur ve gönder
+    createSendToken(result.owner, 201, res);
+    
+  } catch (error) {
+    console.error('Demo hesap oluşturma hatası:', error);
+    next(error);
+  }
+};
+
 export {
   createAdmin,
   login,
   getMe,
   changePassword,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  createDemoAccount // 🎯 YENİ
 }; 
 
 // Oturum sahibinin izinlerini döner
