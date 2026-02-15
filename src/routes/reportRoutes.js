@@ -1,13 +1,12 @@
 import express from 'express';
 import * as reportController from '../controllers/reportController.js';
 import { isAuthenticated, restrictTo } from '../middleware/authMiddleware.js';
+import { checkPermission } from '../middleware/permissionMiddleware.js';
 
 const router = express.Router();
 
-// 🔒 RAPOR YÖNETİMİ - SADECE OWNER VE ADMIN ERİŞEBİLİR
-// Finansal veriler kritik olduğu için sadece yetkililer erişebilir
+// 🔒 Tüm rapor endpoint'leri authentication gerektirir
 router.use(isAuthenticated);
-router.use(restrictTo('OWNER', 'ADMIN'));
 
 /**
  * 📊 GELİR-GİDER ÖZET RAPORU
@@ -18,12 +17,14 @@ router.use(restrictTo('OWNER', 'ADMIN'));
  * - startDate: YYYY-MM-DD (custom tarih aralığı başlangıcı)
  * - endDate: YYYY-MM-DD (custom tarih aralığı bitişi)
  * 
+ * İzin: reports_view
+ * 
  * Örnek:
  * /api/reports/income-expense-summary?period=this_month
  * /api/reports/income-expense-summary?startDate=2026-01-01&endDate=2026-01-31
  */
 router.route('/income-expense-summary')
-  .get(reportController.getIncomeExpenseSummary);
+  .get(checkPermission('reports', 'view'), reportController.getIncomeExpenseSummary);
 
 /**
  * 📈 DETAYLI FİNANSAL RAPOR (Timeline)
@@ -33,23 +34,27 @@ router.route('/income-expense-summary')
  * - period, startDate, endDate (yukarıdaki gibi)
  * - groupBy: 'day' | 'week' | 'month' (varsayılan: 'day')
  * 
+ * İzin: reports_view
+ * 
  * Günlük/haftalık/aylık gelir-gider-kar grafiği için
  * 
  * Örnek:
  * /api/reports/detailed-financial?period=this_month&groupBy=day
  */
 router.route('/detailed-financial')
-  .get(reportController.getDetailedFinancialReport);
+  .get(checkPermission('reports', 'view'), reportController.getDetailedFinancialReport);
 
 /**
  * 🔍 DEBUG: Ödemeleri Kontrol Et
  * GET /api/reports/debug-payments
  * 
+ * İzin: reports_view
+ * 
  * Tarih aralığındaki tüm ödemeleri status bazında gösterir
  * Neden bazı ödemeler eksik diye kontrol için
  */
 router.route('/debug-payments')
-  .get(reportController.debugPayments);
+  .get(checkPermission('reports', 'view'), reportController.debugPayments);
 
 /**
  * 💎 MÜŞTERİ SADAKAT RAPORU
@@ -59,6 +64,8 @@ router.route('/debug-payments')
  * - minPurchases: Minimum satın alma sayısı filtresi (örn: 3)
  * - sortBy: 'ltv' | 'purchases' | 'loyalty_score' | 'last_purchase' (varsayılan: 'ltv')
  * 
+ * İzin: reports_view
+ * 
  * Müşteri sadakati, LTV, churn risk analizi
  * 
  * Örnek:
@@ -66,6 +73,6 @@ router.route('/debug-payments')
  * /api/reports/customer-loyalty?minPurchases=3&sortBy=loyalty_score
  */
 router.route('/customer-loyalty')
-  .get(reportController.getCustomerLoyaltyReport);
+  .get(checkPermission('reports', 'view'), reportController.getCustomerLoyaltyReport);
 
 export default router;
