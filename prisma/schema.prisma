@@ -24,6 +24,11 @@ model Accounts {
   isDemoAccount        Boolean               @default(false) @map("IsDemoAccount")
   demoExpiresAt        DateTime?             @map("DemoExpiresAt")
   demoStatus           DemoStatus            @default(ACTIVE) @map("DemoStatus")
+  isOnboardingCompleted Boolean             @default(false) @map("IsOnboardingCompleted")
+  billingCycle          BillingCycle?       @map("BillingCycle")
+  subscriptionStartDate DateTime?           @map("SubscriptionStartDate")
+  subscriptionEndDate   DateTime?           @map("SubscriptionEndDate")
+  subscriptionStatus    SubscriptionStatus  @default(ACTIVE) @map("SubscriptionStatus")
   appointments         Appointments[]
   clients              Clients[]
   ExpenseCategories    ExpenseCategories[]
@@ -40,6 +45,7 @@ model Accounts {
   Vendors              Vendors[]
   reference_sources    reference_sources[]
   clientNotes          ClientNotes[]
+  subscriptionPayments SubscriptionPayment[]
 
   @@index([smsEnabled], map: "idx_accounts_sms_enabled")
   @@index([isDemoAccount, demoStatus], map: "idx_accounts_demo")
@@ -76,6 +82,8 @@ model Clients {
   lastName     String         @map("LastName")
   phone        String?        @map("Phone")
   email        String?        @map("Email")
+  gender       Gender         @default(UNISEX) @map("Gender")
+  birthDate    DateTime?      @map("BirthDate") @db.Date
   isActive     Boolean        @default(true) @map("IsActive")
   createdAt    DateTime       @default(now()) @map("CreatedAt")
   updatedAt    DateTime       @default(now()) @updatedAt @map("UpdatedAt")
@@ -442,6 +450,42 @@ enum ReportStatus {
   PENDING
   COMPLETED
   FAILED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  UNISEX
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  SUSPENDED
+}
+
+model SubscriptionPayment {
+  id          Int          @id @default(autoincrement()) @map("PaymentID")
+  accountId   Int          @map("AccountID")
+  plan        String       @map("Plan")
+  billingCycle BillingCycle @map("BillingCycle")
+  amount      Decimal      @map("Amount") @db.Decimal(10, 2)
+  currency    String       @default("TRY") @map("Currency") @db.VarChar(10)
+  periodStart DateTime     @map("PeriodStart")
+  periodEnd   DateTime     @map("PeriodEnd")
+  paidAt      DateTime     @default(now()) @map("PaidAt")
+  notes       String?      @map("Notes")
+  createdAt   DateTime     @default(now()) @map("CreatedAt")
+  account     Accounts     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId], map: "idx_sub_payment_account")
+  @@map("SubscriptionPayments")
 }
 
 enum DemoStatus {

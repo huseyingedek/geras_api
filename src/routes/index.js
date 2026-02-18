@@ -1,6 +1,7 @@
 import express from 'express';
 import authRoutes from './authRoutes.js';
 import adminRoutes from './adminRoutes.js';
+import accountRoutes from './accountRoutes.js';
 import serviceRoutes from './serviceRoutes.js';
 import staffRoutes from './staffRoutes.js';
 import clientRoutes from './clientRoutes.js';
@@ -21,6 +22,7 @@ router.get('/', (req, res) => {
 
 router.use('/auth', authRoutes);
 router.use('/admin', adminRoutes);
+router.use('/accounts', accountRoutes);
 router.use('/services', serviceRoutes);
 router.use('/staff', staffRoutes);
 router.use('/clients', clientRoutes);

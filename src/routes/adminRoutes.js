@@ -18,6 +18,13 @@ router.route('/accounts/:id')
 // Detaylı işletme bilgileri (admin paneli için)
 router.get('/accounts/:id/details', adminController.getAccountDetails);
 
+// 📋 ABONELİK YÖNETİMİ (Admin)
+router.get('/subscriptions', adminController.getAllAccountsWithPlans);
+router.patch('/accounts/:id/subscription', adminController.updateSubscriptionSettings);
+router.get('/accounts/:id/subscription/history', adminController.getSubscriptionHistory);
+router.post('/accounts/:id/subscription/payments', adminController.addSubscriptionPayment);
+router.patch('/accounts/:id/demo-expiry', adminController.updateDemoExpiry);
+
 // 🎯 DEMO HESAP YÖNETİMİ (Admin)
 router.get('/demo-accounts/pending', adminController.getPendingDemoAccounts);
 router.get('/demo-accounts', adminController.getAllDemoAccounts);

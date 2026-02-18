@@ -444,9 +444,9 @@ const createDemoAccount = async (req, res, next) => {
       return next(new AppError('Bu kullanıcı email adresi zaten kullanılmaktadır', 400, ErrorCodes.USER_ALREADY_EXISTS));
     }
     
-    // 🎯 2 gün sonrasını hesapla (demo süre sonu)
+    // 🎯 30 gün sonrasını hesapla (demo süre sonu)
     const demoExpiresAt = new Date();
-    demoExpiresAt.setDate(demoExpiresAt.getDate() + 2);
+    demoExpiresAt.setDate(demoExpiresAt.getDate() + 30);
     
     // Transaction ile oluştur
     const result = await prisma.$transaction(async (tx) => {

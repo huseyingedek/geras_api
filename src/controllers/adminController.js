@@ -2,8 +2,11 @@ import bcrypt from 'bcryptjs';
 import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
 import { assignResourcePermissionsToStaff } from '../utils/permissionUtils.js';
-import prisma from '../lib/prisma.js'; // Merkezi instance kullan
+import prisma from '../lib/prisma.js';
 import { addBasicPermissionsToAccount } from '../utils/permissionUtils.js';
+import { SUBSCRIPTION_PLANS, PLAN_COLORS, PLAN_ICONS } from '../../subscriptionPlans.js';
+
+const VALID_PLANS = ['DEMO', 'STARTER', 'PROFESSIONAL', 'PREMIUM'];
 
 const catchAsync = fn => {
   return (req, res, next) => {
@@ -801,6 +804,498 @@ const rejectDemoAccount = catchAsync(async (req, res, next) => {
   });
 });
 
+// 📋 TÜM HESAPLAR — PLAN DETAYLARIYLA (Admin abonelik paneli)
+const getAllAccountsWithPlans = catchAsync(async (req, res, next) => {
+  const { plan, isActive } = req.query;
+
+  const whereClause = {};
+  if (plan) {
+    if (!VALID_PLANS.includes(plan)) {
+      return next(new AppError('Geçersiz plan filtresi', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+    whereClause.subscriptionPlan = plan;
+  }
+  if (isActive !== undefined) {
+    whereClause.isActive = isActive === 'true';
+  }
+
+  const accounts = await prisma.accounts.findMany({
+    where: whereClause,
+    select: {
+      id: true,
+      businessName: true,
+      contactPerson: true,
+      email: true,
+      phone: true,
+      subscriptionPlan: true,
+      billingCycle: true,
+      subscriptionStartDate: true,
+      subscriptionEndDate: true,
+      subscriptionStatus: true,
+      isActive: true,
+      isDemoAccount: true,
+      demoStatus: true,
+      demoExpiresAt: true,
+      businessType: true,
+      createdAt: true,
+      _count: {
+        select: {
+          staff: true,
+          clients: true,
+          services: true,
+          appointments: true
+        }
+      },
+      users: {
+        where: { role: 'OWNER' },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          phone: true
+        }
+      }
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  const enriched = accounts.map(account => {
+    const planKey = account.subscriptionPlan || 'PROFESSIONAL';
+    const planDetails = SUBSCRIPTION_PLANS[planKey];
+
+    let demoInfo = null;
+    if (account.isDemoAccount && account.demoExpiresAt) {
+      const now = new Date();
+      const expiresAt = new Date(account.demoExpiresAt);
+      const remainingMs = expiresAt - now;
+      demoInfo = {
+        demoStatus: account.demoStatus,
+        demoExpiresAt: account.demoExpiresAt,
+        remainingHours: Math.max(0, Math.floor(remainingMs / (1000 * 60 * 60))),
+        isExpired: now > expiresAt
+      };
+    }
+
+    return {
+      id: account.id,
+      businessName: account.businessName,
+      contactPerson: account.contactPerson,
+      email: account.email,
+      phone: account.phone,
+      isActive: account.isActive,
+      businessType: account.businessType,
+      createdAt: account.createdAt,
+      billingCycle: account.billingCycle,
+      subscriptionStartDate: account.subscriptionStartDate,
+      subscriptionEndDate: account.subscriptionEndDate,
+      subscriptionStatus: account.subscriptionStatus,
+      owner: account.users[0] || null,
+      counts: account._count,
+      subscription: {
+        key: planKey,
+        name: planDetails?.name || planKey,
+        displayName: planDetails?.displayName || planKey,
+        price: planDetails?.price ?? null,
+        currency: planDetails?.currency || 'TRY',
+        color: PLAN_COLORS[planKey] || '#999',
+        icon: PLAN_ICONS[planKey] || '📦',
+        isDemoAccount: account.isDemoAccount,
+        demo: demoInfo
+      }
+    };
+  });
+
+  // Plan bazında özet istatistik (hesap sayısı 0 olsa bile fiyat gelir)
+  const summary = VALID_PLANS.reduce((acc, p) => {
+    const plan = SUBSCRIPTION_PLANS[p];
+    acc[p] = {
+      count: enriched.filter(a => a.subscription.key === p).length,
+      name: plan?.name,
+      displayName: plan?.displayName,
+      price: plan?.price ?? 0,
+      currency: plan?.currency || 'TRY',
+      icon: PLAN_ICONS[p],
+      color: PLAN_COLORS[p]
+    };
+    return acc;
+  }, {});
+
+  res.json({
+    status: 'success',
+    results: enriched.length,
+    summary,
+    data: enriched
+  });
+});
+
+// ⏱️ DEMO SÜRESİNİ GÜNCELLE (Admin)
+const updateDemoExpiry = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { durationDays, expiresAt } = req.body;
+
+  if (durationDays === undefined && !expiresAt) {
+    return next(new AppError('durationDays (gün sayısı) veya expiresAt (tarih) gönderilmelidir', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  if (durationDays !== undefined) {
+    const days = parseInt(durationDays);
+    if (isNaN(days) || days < 1 || days > 365) {
+      return next(new AppError('durationDays 1 ile 365 arasında olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+  }
+
+  const account = await prisma.accounts.findUnique({
+    where: { id: parseInt(id) }
+  });
+
+  if (!account) {
+    return next(new AppError('İşletme hesabı bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+  }
+
+  if (!account.isDemoAccount) {
+    return next(new AppError('Bu hesap demo hesabı değil', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  let newExpiresAt;
+
+  if (durationDays !== undefined) {
+    newExpiresAt = new Date();
+    newExpiresAt.setDate(newExpiresAt.getDate() + parseInt(durationDays));
+  } else {
+    newExpiresAt = new Date(expiresAt);
+    if (isNaN(newExpiresAt.getTime())) {
+      return next(new AppError('Geçersiz tarih formatı. ISO 8601 formatı kullanın (örn: 2026-03-01T00:00:00.000Z)', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+    if (newExpiresAt <= new Date()) {
+      return next(new AppError('Bitiş tarihi gelecekte olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+  }
+
+  const updatedAccount = await prisma.accounts.update({
+    where: { id: parseInt(id) },
+    data: {
+      demoExpiresAt: newExpiresAt
+    },
+    select: {
+      id: true,
+      businessName: true,
+      isDemoAccount: true,
+      demoStatus: true,
+      demoExpiresAt: true,
+      isActive: true
+    }
+  });
+
+  const now = new Date();
+  const remainingMs = newExpiresAt - now;
+  const remainingHours = Math.floor(remainingMs / (1000 * 60 * 60));
+
+  res.json({
+    status: 'success',
+    data: {
+      account: updatedAccount,
+      remainingHours,
+      remainingDays: Math.floor(remainingHours / 24)
+    },
+    message: `Demo süresi güncellendi — ${Math.floor(remainingHours / 24)} gün ${remainingHours % 24} saat kaldı`
+  });
+});
+
+// 📋 ABONELİK AYARLARINI GÜNCELLE (plan + dönem + durum)
+const updateSubscriptionSettings = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const {
+    subscriptionPlan,
+    billingCycle,
+    subscriptionStartDate,
+    subscriptionEndDate,
+    subscriptionStatus
+  } = req.body;
+
+  const VALID_BILLING_CYCLES = ['MONTHLY', 'YEARLY'];
+  const VALID_STATUSES = ['ACTIVE', 'EXPIRED', 'CANCELLED', 'SUSPENDED'];
+
+  if (subscriptionPlan && !VALID_PLANS.includes(subscriptionPlan)) {
+    return next(new AppError(`Geçerli planlar: ${VALID_PLANS.join(', ')}`, 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+  if (billingCycle && !VALID_BILLING_CYCLES.includes(billingCycle)) {
+    return next(new AppError('billingCycle MONTHLY veya YEARLY olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+  if (subscriptionStatus && !VALID_STATUSES.includes(subscriptionStatus)) {
+    return next(new AppError(`Geçerli durumlar: ${VALID_STATUSES.join(', ')}`, 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  let parsedStartDate, parsedEndDate;
+  if (subscriptionStartDate) {
+    parsedStartDate = new Date(subscriptionStartDate);
+    if (isNaN(parsedStartDate.getTime())) {
+      return next(new AppError('Geçersiz subscriptionStartDate formatı', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+  }
+  if (subscriptionEndDate) {
+    parsedEndDate = new Date(subscriptionEndDate);
+    if (isNaN(parsedEndDate.getTime())) {
+      return next(new AppError('Geçersiz subscriptionEndDate formatı', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+  }
+
+  const account = await prisma.accounts.findUnique({ where: { id: parseInt(id) } });
+  if (!account) {
+    return next(new AppError('İşletme hesabı bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+  }
+
+  const previousPlan = account.subscriptionPlan;
+
+  const updateData = {
+    ...(subscriptionPlan && { subscriptionPlan }),
+    ...(billingCycle && { billingCycle }),
+    ...(parsedStartDate && { subscriptionStartDate: parsedStartDate }),
+    ...(parsedEndDate && { subscriptionEndDate: parsedEndDate }),
+    ...(subscriptionStatus && { subscriptionStatus }),
+    // Demo hesap ücretli pakete geçince demo kısıtlarını kaldır
+    ...(subscriptionPlan && subscriptionPlan !== 'DEMO' && account.isDemoAccount && {
+      isDemoAccount: false,
+      demoStatus: 'APPROVED',
+      demoExpiresAt: null,
+      isActive: true
+    })
+  };
+
+  const updatedAccount = await prisma.accounts.update({
+    where: { id: parseInt(id) },
+    data: updateData,
+    select: {
+      id: true,
+      businessName: true,
+      subscriptionPlan: true,
+      billingCycle: true,
+      subscriptionStartDate: true,
+      subscriptionEndDate: true,
+      subscriptionStatus: true,
+      isDemoAccount: true,
+      isActive: true
+    }
+  });
+
+  // Kalan gün hesapla
+  let remainingDays = null;
+  if (updatedAccount.subscriptionEndDate) {
+    const diff = new Date(updatedAccount.subscriptionEndDate) - new Date();
+    remainingDays = Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+  }
+
+  res.json({
+    status: 'success',
+    data: {
+      account: updatedAccount,
+      remainingDays,
+      planDetails: SUBSCRIPTION_PLANS[updatedAccount.subscriptionPlan] || null
+    },
+    message: subscriptionPlan && subscriptionPlan !== previousPlan
+      ? `Plan ${previousPlan} → ${subscriptionPlan} olarak güncellendi`
+      : 'Abonelik ayarları güncellendi'
+  });
+});
+
+// 💳 MANUEL ÖDEME KAYDI EKLE (Admin)
+const addSubscriptionPayment = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { amount, billingCycle, periodStart, periodEnd, notes, paidAt } = req.body;
+
+  if (!amount || !billingCycle || !periodStart || !periodEnd) {
+    return next(new AppError('amount, billingCycle, periodStart ve periodEnd zorunludur', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  if (!['MONTHLY', 'YEARLY'].includes(billingCycle)) {
+    return next(new AppError('billingCycle MONTHLY veya YEARLY olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  const parsedAmount = parseFloat(amount);
+  if (isNaN(parsedAmount) || parsedAmount <= 0) {
+    return next(new AppError('Geçerli bir tutar giriniz', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  const parsedPeriodStart = new Date(periodStart);
+  const parsedPeriodEnd = new Date(periodEnd);
+  if (isNaN(parsedPeriodStart.getTime()) || isNaN(parsedPeriodEnd.getTime())) {
+    return next(new AppError('Geçersiz tarih formatı', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+  if (parsedPeriodEnd <= parsedPeriodStart) {
+    return next(new AppError('periodEnd, periodStart\'tan sonra olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  const account = await prisma.accounts.findUnique({ where: { id: parseInt(id) } });
+  if (!account) {
+    return next(new AppError('İşletme hesabı bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+  }
+
+  // Ödeme kaydet + abonelik bitiş tarihini güncelle (transaction)
+  const result = await prisma.$transaction(async (tx) => {
+    const payment = await tx.subscriptionPayment.create({
+      data: {
+        accountId: parseInt(id),
+        plan: account.subscriptionPlan || 'PROFESSIONAL',
+        billingCycle,
+        amount: parsedAmount,
+        periodStart: parsedPeriodStart,
+        periodEnd: parsedPeriodEnd,
+        paidAt: paidAt ? new Date(paidAt) : new Date(),
+        notes: notes || null
+      }
+    });
+
+    // Abonelik bitiş tarihini ve durumunu otomatik güncelle
+    const updatedAccount = await tx.accounts.update({
+      where: { id: parseInt(id) },
+      data: {
+        subscriptionEndDate: parsedPeriodEnd,
+        subscriptionStartDate: account.subscriptionStartDate || parsedPeriodStart,
+        subscriptionStatus: 'ACTIVE',
+        isActive: true
+      },
+      select: {
+        id: true,
+        businessName: true,
+        subscriptionPlan: true,
+        billingCycle: true,
+        subscriptionStartDate: true,
+        subscriptionEndDate: true,
+        subscriptionStatus: true
+      }
+    });
+
+    return { payment, account: updatedAccount };
+  });
+
+  const remainingDays = Math.max(0, Math.floor(
+    (new Date(parsedPeriodEnd) - new Date()) / (1000 * 60 * 60 * 24)
+  ));
+
+  res.status(201).json({
+    status: 'success',
+    data: {
+      payment: result.payment,
+      account: result.account,
+      remainingDays
+    },
+    message: `Ödeme kaydedildi — abonelik ${parsedPeriodEnd.toLocaleDateString('tr-TR')} tarihine kadar aktif`
+  });
+});
+
+// 📜 ÖDEME GEÇMİŞİ (Admin)
+const getSubscriptionHistory = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+
+  const account = await prisma.accounts.findUnique({
+    where: { id: parseInt(id) },
+    select: {
+      id: true,
+      businessName: true,
+      subscriptionPlan: true,
+      billingCycle: true,
+      subscriptionStartDate: true,
+      subscriptionEndDate: true,
+      subscriptionStatus: true,
+      isDemoAccount: true,
+      demoStatus: true,
+      demoExpiresAt: true,
+      isActive: true
+    }
+  });
+
+  if (!account) {
+    return next(new AppError('İşletme hesabı bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+  }
+
+  const payments = await prisma.subscriptionPayment.findMany({
+    where: { accountId: parseInt(id) },
+    orderBy: { paidAt: 'desc' }
+  });
+
+  const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+
+  let remainingDays = null;
+  let isExpired = false;
+  if (account.subscriptionEndDate) {
+    const diff = new Date(account.subscriptionEndDate) - new Date();
+    remainingDays = Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+    isExpired = diff < 0;
+  }
+
+  res.json({
+    status: 'success',
+    data: {
+      account: {
+        ...account,
+        remainingDays,
+        isExpired,
+        planDetails: SUBSCRIPTION_PLANS[account.subscriptionPlan] || null
+      },
+      payments,
+      summary: {
+        totalPayments: payments.length,
+        totalPaid: parseFloat(totalPaid.toFixed(2)),
+        currency: 'TRY'
+      }
+    }
+  });
+});
+
+// 🔄 BİR HESABIN PLANINI DEĞİŞTİR (Admin)
+const changeAccountPlan = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { subscriptionPlan } = req.body;
+
+  if (!subscriptionPlan) {
+    return next(new AppError('subscriptionPlan alanı zorunludur', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  if (!VALID_PLANS.includes(subscriptionPlan)) {
+    return next(new AppError(`Geçerli planlar: ${VALID_PLANS.join(', ')}`, 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  const account = await prisma.accounts.findUnique({
+    where: { id: parseInt(id) }
+  });
+
+  if (!account) {
+    return next(new AppError('İşletme hesabı bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+  }
+
+  const previousPlan = account.subscriptionPlan;
+
+  const updatedAccount = await prisma.accounts.update({
+    where: { id: parseInt(id) },
+    data: {
+      subscriptionPlan,
+      // Demo hesap STARTER/PROFESSIONAL/PREMIUM'a geçince demo kısıtlarını kaldır
+      ...(account.isDemoAccount && subscriptionPlan !== 'DEMO' && {
+        isDemoAccount: false,
+        demoStatus: 'APPROVED',
+        demoExpiresAt: null,
+        isActive: true
+      })
+    },
+    select: {
+      id: true,
+      businessName: true,
+      subscriptionPlan: true,
+      isDemoAccount: true,
+      demoStatus: true,
+      isActive: true
+    }
+  });
+
+  res.json({
+    status: 'success',
+    data: {
+      account: updatedAccount,
+      planDetails: SUBSCRIPTION_PLANS[subscriptionPlan]
+    },
+    message: `Plan ${previousPlan} → ${subscriptionPlan} olarak güncellendi`
+  });
+});
+
 export {
   createAccount,
   getAllAccounts,
@@ -809,6 +1304,12 @@ export {
   deleteAccount,
   updateMyBusiness,
   getAccountDetails,
+  getAllAccountsWithPlans,
+  changeAccountPlan,
+  updateSubscriptionSettings,
+  addSubscriptionPayment,
+  getSubscriptionHistory,
+  updateDemoExpiry,
   // 🎯 DEMO YÖNETİMİ
   getPendingDemoAccounts,
   getAllDemoAccounts,

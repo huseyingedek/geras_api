@@ -9,8 +9,10 @@ const catchAsync = fn => {
 };
 
 
+const VALID_GENDERS = ['MALE', 'FEMALE', 'UNISEX'];
+
 const createClient = catchAsync(async (req, res, next) => {
-  const { firstName, lastName, phone, email, initialNote } = req.body;
+  const { firstName, lastName, phone, email, gender, birthDate, initialNote } = req.body;
   const accountId = req.user.accountId;
   const userId = req.user.id;
   
@@ -20,6 +22,22 @@ const createClient = catchAsync(async (req, res, next) => {
   
   if (!firstName || !lastName) {
     return next(new AppError('Ad ve soyad bilgileri zorunludur', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  if (!gender) {
+    return next(new AppError('Cinsiyet alanı zorunludur', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  if (!VALID_GENDERS.includes(gender)) {
+    return next(new AppError('Cinsiyet MALE, FEMALE veya UNISEX olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  let parsedBirthDate = null;
+  if (birthDate) {
+    parsedBirthDate = new Date(birthDate);
+    if (isNaN(parsedBirthDate.getTime())) {
+      return next(new AppError('Geçersiz doğum tarihi formatı', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
   }
 
   // Telefon numarası validation
@@ -106,7 +124,9 @@ const createClient = catchAsync(async (req, res, next) => {
         firstName,
         lastName,
         phone,
-        email
+        email,
+        gender,
+        ...(parsedBirthDate && { birthDate: parsedBirthDate })
       }
     });
 
@@ -257,7 +277,7 @@ const getClientById = catchAsync(async (req, res, next) => {
 
 const updateClient = catchAsync(async (req, res, next) => {
   const { id } = req.params;
-  const { firstName, lastName, phone, email, isActive } = req.body;
+  const { firstName, lastName, phone, email, gender, birthDate, isActive } = req.body;
   const accountId = req.user.accountId;
   
   if (!accountId) {
@@ -328,7 +348,23 @@ const updateClient = catchAsync(async (req, res, next) => {
       return next(new AppError('Bu telefon numarası başka bir müşteri tarafından kullanılıyor', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
     }
   }
-  
+
+  if (gender !== undefined && !VALID_GENDERS.includes(gender)) {
+    return next(new AppError('Cinsiyet MALE, FEMALE veya UNISEX olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  let parsedBirthDate;
+  if (birthDate !== undefined) {
+    if (birthDate === null || birthDate === '') {
+      parsedBirthDate = null;
+    } else {
+      parsedBirthDate = new Date(birthDate);
+      if (isNaN(parsedBirthDate.getTime())) {
+        return next(new AppError('Geçersiz doğum tarihi formatı', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+      }
+    }
+  }
+
   const updatedClient = await prisma.clients.update({
     where: { id: parseInt(id) },
     data: {
@@ -336,6 +372,8 @@ const updateClient = catchAsync(async (req, res, next) => {
       ...(lastName && { lastName }),
       ...(phone !== undefined && { phone }),
       ...(email !== undefined && { email }),
+      ...(gender !== undefined && { gender }),
+      ...(birthDate !== undefined && { birthDate: parsedBirthDate }),
       ...(isActive !== undefined && { isActive: isActive === true || isActive === 'true' })
     }
   });

@@ -9,31 +9,38 @@ export const SUBSCRIPTION_PLANS = {
   DEMO: {
     id: 'DEMO',
     name: 'Demo',
-    displayName: '🎁 Demo (2 Gün)',
+    displayName: '🎁 Demo (30 Gün)',
     price: 0,
-    duration: '2 gün',
+    duration: '30 gün',
     features: {
-      accounts: 1,
-      staff: 2,
-      clients: 100,
-      appointments: 50,
-      services: 10,
+      accounts: 'unlimited',
+      staff: 'unlimited',
+      clients: 'unlimited',
+      appointments: 'unlimited',
+      services: 'unlimited',
       reports: {
         basic: true,
-        advanced: false,
-        export: false
+        advanced: true,
+        export: true,
+        custom: true
       },
-      sms: 50, // Hediye SMS
-      permissions: false,
-      referenceTracking: false,
-      expenseManagement: false,
-      multipleLocations: false
+      sms: 50,
+      permissions: true,
+      referenceTracking: true,
+      expenseManagement: true,
+      multipleLocations: true,
+      financialReports: true,
+      sessionTracking: true,
+      apiAccess: true,
+      prioritySupport: false,
+      customization: false,
+      branchReporting: true
     },
     limits: {
-      maxStaff: 2,
-      maxClients: 100,
-      maxAppointmentsPerMonth: 50,
-      maxServices: 10
+      maxStaff: null,
+      maxClients: null,
+      maxAppointmentsPerMonth: null,
+      maxServices: null
     }
   },
 
@@ -41,7 +48,7 @@ export const SUBSCRIPTION_PLANS = {
     id: 'STARTER',
     name: 'Başlangıç',
     displayName: '🚀 Başlangıç Paketi',
-    price: 499,
+    price: 799,
     currency: 'TRY',
     duration: 'aylık',
     features: {
@@ -74,7 +81,7 @@ export const SUBSCRIPTION_PLANS = {
     id: 'PROFESSIONAL',
     name: 'Profesyonel',
     displayName: '⭐ Profesyonel Paket',
-    price: 899,
+    price: 1299,
     currency: 'TRY',
     duration: 'aylık',
     popular: true, // En popüler paket
@@ -109,7 +116,7 @@ export const SUBSCRIPTION_PLANS = {
     id: 'PREMIUM',
     name: 'Premium',
     displayName: '💎 Premium Paket',
-    price: 1499,
+    price: 2199,
     currency: 'TRY',
     duration: 'aylık',
     features: {
@@ -153,10 +160,10 @@ export const FEATURE_COMPARISON = [
   {
     category: 'Temel Özellikler',
     features: [
-      { name: 'İşletme Hesabı', demo: '1', starter: '1', professional: '1', premium: 'Sınırsız' },
-      { name: 'Personel Sayısı', demo: '2', starter: '2', professional: '5', premium: 'Sınırsız' },
-      { name: 'Müşteri Sayısı', demo: '100', starter: '100', professional: 'Sınırsız', premium: 'Sınırsız' },
-      { name: 'Randevu Sayısı', demo: '50/ay', starter: 'Sınırsız', professional: 'Sınırsız', premium: 'Sınırsız' },
+      { name: 'İşletme Hesabı', demo: 'Sınırsız', starter: '1', professional: '1', premium: 'Sınırsız' },
+      { name: 'Personel Sayısı', demo: 'Sınırsız', starter: '2', professional: '5', premium: 'Sınırsız' },
+      { name: 'Müşteri Sayısı', demo: 'Sınırsız', starter: '100', professional: 'Sınırsız', premium: 'Sınırsız' },
+      { name: 'Randevu Sayısı', demo: 'Sınırsız', starter: 'Sınırsız', professional: 'Sınırsız', premium: 'Sınırsız' },
       { name: 'Dahil SMS', demo: '50', starter: '50', professional: '200', premium: '500' }
     ]
   },
@@ -166,26 +173,26 @@ export const FEATURE_COMPARISON = [
       { name: 'Randevu Yönetimi', demo: true, starter: true, professional: true, premium: true },
       { name: 'Müşteri Yönetimi', demo: true, starter: true, professional: true, premium: true },
       { name: 'Satış Takibi', demo: true, starter: true, professional: true, premium: true },
-      { name: 'Personel Yetkilendirme', demo: false, starter: false, professional: true, premium: true },
-      { name: 'Gelir-Gider Yönetimi', demo: false, starter: false, professional: true, premium: true },
-      { name: 'Referans Takibi', demo: false, starter: false, professional: true, premium: true }
+      { name: 'Personel Yetkilendirme', demo: true, starter: false, professional: true, premium: true },
+      { name: 'Gelir-Gider Yönetimi', demo: true, starter: false, professional: true, premium: true },
+      { name: 'Referans Takibi', demo: true, starter: false, professional: true, premium: true }
     ]
   },
   {
     category: 'Raporlama',
     features: [
       { name: 'Temel Dashboard', demo: true, starter: true, professional: true, premium: true },
-      { name: 'Gelişmiş Raporlar', demo: false, starter: false, professional: true, premium: true },
-      { name: 'Excel/PDF Export', demo: false, starter: false, professional: true, premium: true },
-      { name: 'Özel Raporlar', demo: false, starter: false, professional: false, premium: true },
-      { name: 'Şube Raporları', demo: false, starter: false, professional: false, premium: true }
+      { name: 'Gelişmiş Raporlar', demo: true, starter: false, professional: true, premium: true },
+      { name: 'Excel/PDF Export', demo: true, starter: false, professional: true, premium: true },
+      { name: 'Özel Raporlar', demo: true, starter: false, professional: false, premium: true },
+      { name: 'Şube Raporları', demo: true, starter: false, professional: false, premium: true }
     ]
   },
   {
     category: 'İleri Özellikler',
     features: [
-      { name: 'Çoklu Şube Yönetimi', demo: false, starter: false, professional: false, premium: true },
-      { name: 'API Erişimi', demo: false, starter: false, professional: false, premium: true },
+      { name: 'Çoklu Şube Yönetimi', demo: true, starter: false, professional: false, premium: true },
+      { name: 'API Erişimi', demo: true, starter: false, professional: false, premium: true },
       { name: 'Öncelikli Destek', demo: false, starter: false, professional: false, premium: true },
       { name: 'Özel Geliştirme', demo: false, starter: false, professional: false, premium: true }
     ]
