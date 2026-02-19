@@ -633,13 +633,13 @@ const getAccountDetails = catchAsync(async (req, res, next) => {
   });
 });
 
-// 🎯 DEMO HESAPLARI LİSTELE (Admin için)
+// 🎯 DEMO HESAPLARI LİSTELE — Süresi dolmuş olanlar (Admin için)
 const getPendingDemoAccounts = catchAsync(async (req, res, next) => {
-  // Onay bekleyen demo hesapları getir
+  // Süresi dolmuş (EXPIRED veya eski PENDING_APPROVAL) demo hesapları getir
   const pendingDemos = await prisma.accounts.findMany({
     where: {
       isDemoAccount: true,
-      demoStatus: 'PENDING_APPROVAL'
+      demoStatus: { in: ['EXPIRED', 'PENDING_APPROVAL'] }
     },
     include: {
       users: {
@@ -727,19 +727,16 @@ const getAllDemoAccounts = catchAsync(async (req, res, next) => {
   });
 });
 
-// 🎯 DEMO HESAP ONAYLAMA (Admin)
+// 🎯 DEMO HESAP ONAYLAMA — Planı belirleyip aktifleştir (Admin)
 const approveDemoAccount = catchAsync(async (req, res, next) => {
   const { id } = req.params;
-  const { subscriptionPlan } = req.body;
+  const { subscriptionPlan, billingCycle, subscriptionStartDate, subscriptionEndDate } = req.body;
 
-  // Paket kontrolü
   if (!subscriptionPlan || !['STARTER', 'PROFESSIONAL', 'PREMIUM'].includes(subscriptionPlan)) {
-    return next(new AppError('Geçerli bir paket seçiniz (STARTER, PROFESSIONAL, PREMIUM)', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    return next(new AppError('Geçerli bir paket seçiniz: STARTER, PROFESSIONAL, PREMIUM', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
   }
 
-  const account = await prisma.accounts.findUnique({
-    where: { id: parseInt(id) }
-  });
+  const account = await prisma.accounts.findUnique({ where: { id: parseInt(id) } });
 
   if (!account) {
     return next(new AppError('İşletme hesabı bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
@@ -749,25 +746,39 @@ const approveDemoAccount = catchAsync(async (req, res, next) => {
     return next(new AppError('Bu hesap demo hesabı değil', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
   }
 
-  if (account.demoStatus !== 'PENDING_APPROVAL') {
-    return next(new AppError('Bu hesap onay bekleyen durumda değil', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
-  }
+  const updateData = {
+    subscriptionPlan,
+    isDemoAccount: false,
+    demoStatus: 'APPROVED',
+    demoExpiresAt: null,
+    isActive: true,
+    subscriptionStatus: 'ACTIVE',
+    ...(billingCycle && { billingCycle }),
+    ...(subscriptionStartDate && { subscriptionStartDate: new Date(subscriptionStartDate) }),
+    ...(subscriptionEndDate && { subscriptionEndDate: new Date(subscriptionEndDate) })
+  };
 
-  // Hesabı onayla ve paketi ayarla
   const updatedAccount = await prisma.accounts.update({
     where: { id: parseInt(id) },
-    data: {
-      demoStatus: 'APPROVED',
-      subscriptionPlan: subscriptionPlan,
-      isActive: true,
-      demoExpiresAt: null // Artık demo değil, süre kısıtı yok
+    data: updateData,
+    select: {
+      id: true,
+      businessName: true,
+      subscriptionPlan: true,
+      billingCycle: true,
+      subscriptionStartDate: true,
+      subscriptionEndDate: true,
+      subscriptionStatus: true,
+      isDemoAccount: true,
+      demoStatus: true,
+      isActive: true
     }
   });
 
   res.json({
     status: 'success',
     data: updatedAccount,
-    message: `Demo hesap onaylandı ve ${subscriptionPlan} paketine yükseltildi`
+    message: `Hesap aktifleştirildi — ${subscriptionPlan} paketine geçildi`
   });
 });
 
@@ -788,19 +799,25 @@ const rejectDemoAccount = catchAsync(async (req, res, next) => {
     return next(new AppError('Bu hesap demo hesabı değil', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
   }
 
-  // Hesabı kısıtla
   const updatedAccount = await prisma.accounts.update({
     where: { id: parseInt(id) },
     data: {
       demoStatus: 'RESTRICTED',
       isActive: false
+    },
+    select: {
+      id: true,
+      businessName: true,
+      isDemoAccount: true,
+      demoStatus: true,
+      isActive: true
     }
   });
 
   res.json({
     status: 'success',
     data: updatedAccount,
-    message: 'Demo hesap reddedildi ve kısıtlandı'
+    message: 'Demo hesap askıya alındı'
   });
 });
 
@@ -809,59 +826,52 @@ const getAllAccountsWithPlans = catchAsync(async (req, res, next) => {
   const { plan, isActive } = req.query;
 
   const whereClause = {};
-  if (plan) {
-    if (!VALID_PLANS.includes(plan)) {
-      return next(new AppError('Geçersiz plan filtresi', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
-    }
-    whereClause.subscriptionPlan = plan;
-  }
-  if (isActive !== undefined) {
-    whereClause.isActive = isActive === 'true';
-  }
+  if (plan) whereClause.subscriptionPlan = plan;
+  if (isActive !== undefined) whereClause.isActive = isActive === 'true';
 
-  const accounts = await prisma.accounts.findMany({
-    where: whereClause,
-    select: {
-      id: true,
-      businessName: true,
-      contactPerson: true,
-      email: true,
-      phone: true,
-      subscriptionPlan: true,
-      billingCycle: true,
-      subscriptionStartDate: true,
-      subscriptionEndDate: true,
-      subscriptionStatus: true,
-      isActive: true,
-      isDemoAccount: true,
-      demoStatus: true,
-      demoExpiresAt: true,
-      businessType: true,
-      createdAt: true,
-      _count: {
-        select: {
-          staff: true,
-          clients: true,
-          services: true,
-          appointments: true
+  // DB'den planları ve hesapları paralel çek
+  const [dbPlans, accounts] = await Promise.all([
+    prisma.plans.findMany({ orderBy: { sortOrder: 'asc' } }),
+    prisma.accounts.findMany({
+      where: whereClause,
+      select: {
+        id: true,
+        businessName: true,
+        contactPerson: true,
+        email: true,
+        phone: true,
+        subscriptionPlan: true,
+        billingCycle: true,
+        subscriptionStartDate: true,
+        subscriptionEndDate: true,
+        subscriptionStatus: true,
+        isActive: true,
+        isDemoAccount: true,
+        demoStatus: true,
+        demoExpiresAt: true,
+        businessType: true,
+        createdAt: true,
+        _count: {
+          select: { staff: true, clients: true, services: true, appointments: true }
+        },
+        users: {
+          where: { role: 'OWNER' },
+          select: { id: true, username: true, email: true, phone: true }
         }
       },
-      users: {
-        where: { role: 'OWNER' },
-        select: {
-          id: true,
-          username: true,
-          email: true,
-          phone: true
-        }
-      }
-    },
-    orderBy: { createdAt: 'desc' }
-  });
+      orderBy: { createdAt: 'desc' }
+    })
+  ]);
+
+  // Plan map — key → plan detayı
+  const planMap = dbPlans.reduce((acc, p) => {
+    acc[p.key] = p;
+    return acc;
+  }, {});
 
   const enriched = accounts.map(account => {
     const planKey = account.subscriptionPlan || 'PROFESSIONAL';
-    const planDetails = SUBSCRIPTION_PLANS[planKey];
+    const planDetails = planMap[planKey];
 
     let demoInfo = null;
     if (account.isDemoAccount && account.demoExpiresAt) {
@@ -895,27 +905,30 @@ const getAllAccountsWithPlans = catchAsync(async (req, res, next) => {
         key: planKey,
         name: planDetails?.name || planKey,
         displayName: planDetails?.displayName || planKey,
-        price: planDetails?.price ?? null,
+        price: planDetails ? parseFloat(planDetails.price) : null,
+        yearlyPrice: planDetails?.yearlyPrice ? parseFloat(planDetails.yearlyPrice) : null,
         currency: planDetails?.currency || 'TRY',
-        color: PLAN_COLORS[planKey] || '#999',
-        icon: PLAN_ICONS[planKey] || '📦',
+        color: planDetails?.color || '#999',
+        icon: planDetails?.icon || '📦',
         isDemoAccount: account.isDemoAccount,
         demo: demoInfo
       }
     };
   });
 
-  // Plan bazında özet istatistik (hesap sayısı 0 olsa bile fiyat gelir)
-  const summary = VALID_PLANS.reduce((acc, p) => {
-    const plan = SUBSCRIPTION_PLANS[p];
-    acc[p] = {
-      count: enriched.filter(a => a.subscription.key === p).length,
-      name: plan?.name,
-      displayName: plan?.displayName,
-      price: plan?.price ?? 0,
-      currency: plan?.currency || 'TRY',
-      icon: PLAN_ICONS[p],
-      color: PLAN_COLORS[p]
+  // Plan bazında özet istatistik (DB'deki tüm planlar, hesap sayısı 0 olsa bile gelir)
+  const summary = dbPlans.reduce((acc, p) => {
+    acc[p.key] = {
+      count: enriched.filter(a => a.subscription.key === p.key).length,
+      name: p.name,
+      displayName: p.displayName,
+      price: parseFloat(p.price),
+      yearlyPrice: p.yearlyPrice ? parseFloat(p.yearlyPrice) : null,
+      currency: p.currency,
+      icon: p.icon,
+      color: p.color,
+      isActive: p.isActive,
+      isDemo: p.isDemo
     };
     return acc;
   }, {});
@@ -1015,8 +1028,12 @@ const updateSubscriptionSettings = catchAsync(async (req, res, next) => {
   const VALID_BILLING_CYCLES = ['MONTHLY', 'YEARLY'];
   const VALID_STATUSES = ['ACTIVE', 'EXPIRED', 'CANCELLED', 'SUSPENDED'];
 
-  if (subscriptionPlan && !VALID_PLANS.includes(subscriptionPlan)) {
-    return next(new AppError(`Geçerli planlar: ${VALID_PLANS.join(', ')}`, 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  if (subscriptionPlan) {
+    const planExists = await prisma.plans.findUnique({ where: { key: subscriptionPlan } });
+    if (!planExists) {
+      const allPlans = await prisma.plans.findMany({ select: { key: true } });
+      return next(new AppError(`Geçersiz plan. Mevcut planlar: ${allPlans.map(p => p.key).join(', ')}`, 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
   }
   if (billingCycle && !VALID_BILLING_CYCLES.includes(billingCycle)) {
     return next(new AppError('billingCycle MONTHLY veya YEARLY olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
@@ -1097,31 +1114,46 @@ const updateSubscriptionSettings = catchAsync(async (req, res, next) => {
   });
 });
 
-// 💳 MANUEL ÖDEME KAYDI EKLE (Admin)
+// 💳 MANUEL ÖDEME KAYDI EKLE — Tek ödeme veya taksitli (Admin)
 const addSubscriptionPayment = catchAsync(async (req, res, next) => {
   const { id } = req.params;
-  const { amount, billingCycle, periodStart, periodEnd, notes, paidAt } = req.body;
+  const {
+    totalAmount,
+    billingCycle,
+    periodStart,
+    periodEnd,
+    paymentMethod = 'CASH',
+    notes,
+    // Tek ödeme için
+    paidAt,
+    // Taksitli ödeme için
+    installments
+  } = req.body;
 
-  if (!amount || !billingCycle || !periodStart || !periodEnd) {
-    return next(new AppError('amount, billingCycle, periodStart ve periodEnd zorunludur', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  const VALID_METHODS = ['CASH', 'IYZICO', 'BANK_TRANSFER', 'OTHER'];
+  const VALID_CYCLES = ['MONTHLY', 'YEARLY'];
+
+  if (!totalAmount) {
+    return next(new AppError('totalAmount zorunludur', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
   }
-
-  if (!['MONTHLY', 'YEARLY'].includes(billingCycle)) {
+  const parsedTotal = parseFloat(totalAmount);
+  if (isNaN(parsedTotal) || parsedTotal <= 0) {
+    return next(new AppError('Geçerli bir tutar giriniz', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+  if (!VALID_METHODS.includes(paymentMethod)) {
+    return next(new AppError(`Geçerli ödeme yöntemleri: ${VALID_METHODS.join(', ')}`, 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+  if (billingCycle && !VALID_CYCLES.includes(billingCycle)) {
     return next(new AppError('billingCycle MONTHLY veya YEARLY olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
   }
 
-  const parsedAmount = parseFloat(amount);
-  if (isNaN(parsedAmount) || parsedAmount <= 0) {
-    return next(new AppError('Geçerli bir tutar giriniz', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  const parsedPeriodStart = periodStart ? new Date(periodStart) : null;
+  const parsedPeriodEnd = periodEnd ? new Date(periodEnd) : null;
+  if (parsedPeriodStart && isNaN(parsedPeriodStart.getTime())) {
+    return next(new AppError('Geçersiz periodStart tarihi', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
   }
-
-  const parsedPeriodStart = new Date(periodStart);
-  const parsedPeriodEnd = new Date(periodEnd);
-  if (isNaN(parsedPeriodStart.getTime()) || isNaN(parsedPeriodEnd.getTime())) {
-    return next(new AppError('Geçersiz tarih formatı', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
-  }
-  if (parsedPeriodEnd <= parsedPeriodStart) {
-    return next(new AppError('periodEnd, periodStart\'tan sonra olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  if (parsedPeriodEnd && isNaN(parsedPeriodEnd.getTime())) {
+    return next(new AppError('Geçersiz periodEnd tarihi', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
   }
 
   const account = await prisma.accounts.findUnique({ where: { id: parseInt(id) } });
@@ -1129,56 +1161,158 @@ const addSubscriptionPayment = catchAsync(async (req, res, next) => {
     return next(new AppError('İşletme hesabı bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
   }
 
-  // Ödeme kaydet + abonelik bitiş tarihini güncelle (transaction)
   const result = await prisma.$transaction(async (tx) => {
-    const payment = await tx.subscriptionPayment.create({
-      data: {
-        accountId: parseInt(id),
-        plan: account.subscriptionPlan || 'PROFESSIONAL',
-        billingCycle,
-        amount: parsedAmount,
-        periodStart: parsedPeriodStart,
-        periodEnd: parsedPeriodEnd,
-        paidAt: paidAt ? new Date(paidAt) : new Date(),
-        notes: notes || null
-      }
-    });
+    let createdPayments = [];
 
-    // Abonelik bitiş tarihini ve durumunu otomatik güncelle
-    const updatedAccount = await tx.accounts.update({
-      where: { id: parseInt(id) },
-      data: {
-        subscriptionEndDate: parsedPeriodEnd,
-        subscriptionStartDate: account.subscriptionStartDate || parsedPeriodStart,
-        subscriptionStatus: 'ACTIVE',
-        isActive: true
-      },
-      select: {
-        id: true,
-        businessName: true,
-        subscriptionPlan: true,
-        billingCycle: true,
-        subscriptionStartDate: true,
-        subscriptionEndDate: true,
-        subscriptionStatus: true
-      }
-    });
+    if (installments && Array.isArray(installments) && installments.length > 1) {
+      // ─── TAKSİTLİ ÖDEME ───────────────────────────────────────────────────
+      // installments: [{ amount, dueDate, paymentMethod?, paidAt?, status? }, ...]
+      const totalInstallments = installments.length;
 
-    return { payment, account: updatedAccount };
+      for (let i = 0; i < installments.length; i++) {
+        const inst = installments[i];
+        const instAmount = parseFloat(inst.amount);
+        if (isNaN(instAmount) || instAmount <= 0) {
+          throw new AppError(`${i + 1}. taksit tutarı geçersiz`, 400, ErrorCodes.GENERAL_VALIDATION_ERROR);
+        }
+
+        // Sadece açıkça "PAID" gönderilmişse ödendi say, default PENDING
+        const instStatus = inst.status === 'PAID' ? 'PAID' : 'PENDING';
+        const instMethod = inst.paymentMethod || paymentMethod;
+
+        const payment = await tx.subscriptionPayment.create({
+          data: {
+            accountId: parseInt(id),
+            plan: account.subscriptionPlan || 'PROFESSIONAL',
+            billingCycle: billingCycle || null,
+            totalAmount: parsedTotal,
+            installmentAmount: instAmount,
+            currency: 'TRY',
+            paymentMethod: VALID_METHODS.includes(instMethod) ? instMethod : 'CASH',
+            periodStart: parsedPeriodStart,
+            periodEnd: parsedPeriodEnd,
+            installmentNumber: i + 1,
+            totalInstallments,
+            dueDate: inst.dueDate ? new Date(inst.dueDate) : null,
+            paidAt: instStatus === 'PAID' ? (inst.paidAt ? new Date(inst.paidAt) : new Date()) : null,
+            status: instStatus,
+            notes: notes || null
+          }
+        });
+        createdPayments.push(payment);
+      }
+    } else {
+      // ─── TEK ÖDEME ────────────────────────────────────────────────────────
+      const payment = await tx.subscriptionPayment.create({
+        data: {
+          accountId: parseInt(id),
+          plan: account.subscriptionPlan || 'PROFESSIONAL',
+          billingCycle: billingCycle || null,
+          totalAmount: parsedTotal,
+          installmentAmount: parsedTotal,
+          currency: 'TRY',
+          paymentMethod,
+          periodStart: parsedPeriodStart,
+          periodEnd: parsedPeriodEnd,
+          installmentNumber: 1,
+          totalInstallments: 1,
+          dueDate: parsedPeriodEnd,
+          paidAt: paidAt ? new Date(paidAt) : new Date(),
+          status: 'PAID',
+          notes: notes || null
+        }
+      });
+      createdPayments.push(payment);
+    }
+
+    // Abonelik bitiş tarihi güncelle (eğer periodEnd verilmişse)
+    let updatedAccount = null;
+    if (parsedPeriodEnd) {
+      updatedAccount = await tx.accounts.update({
+        where: { id: parseInt(id) },
+        data: {
+          subscriptionEndDate: parsedPeriodEnd,
+          subscriptionStartDate: account.subscriptionStartDate || parsedPeriodStart || new Date(),
+          billingCycle: billingCycle || account.billingCycle,
+          subscriptionStatus: 'ACTIVE',
+          isActive: true
+        },
+        select: {
+          id: true,
+          businessName: true,
+          subscriptionPlan: true,
+          billingCycle: true,
+          subscriptionStartDate: true,
+          subscriptionEndDate: true,
+          subscriptionStatus: true,
+          isActive: true
+        }
+      });
+    }
+
+    return { payments: createdPayments, account: updatedAccount };
   });
 
-  const remainingDays = Math.max(0, Math.floor(
-    (new Date(parsedPeriodEnd) - new Date()) / (1000 * 60 * 60 * 24)
-  ));
+  const remainingDays = parsedPeriodEnd
+    ? Math.max(0, Math.floor((parsedPeriodEnd - new Date()) / (1000 * 60 * 60 * 24)))
+    : null;
+
+  const paidCount = result.payments.filter(p => p.status === 'PAID').length;
+  const pendingCount = result.payments.filter(p => p.status === 'PENDING').length;
 
   res.status(201).json({
     status: 'success',
     data: {
-      payment: result.payment,
+      payments: result.payments,
       account: result.account,
-      remainingDays
+      summary: {
+        totalInstallments: result.payments.length,
+        paidInstallments: paidCount,
+        pendingInstallments: pendingCount,
+        totalAmount: parsedTotal,
+        remainingDays
+      }
     },
-    message: `Ödeme kaydedildi — abonelik ${parsedPeriodEnd.toLocaleDateString('tr-TR')} tarihine kadar aktif`
+    message: result.payments.length > 1
+      ? `${result.payments.length} taksit kaydedildi (${paidCount} ödendi, ${pendingCount} bekliyor)`
+      : `Ödeme kaydedildi — ${parsedPeriodEnd ? parsedPeriodEnd.toLocaleDateString('tr-TR') + ' tarihine kadar aktif' : 'kaydedildi'}`
+  });
+});
+
+// 💳 TAKSİT ÖDEMEK (Admin — bekleyen taksiti ödenmiş işaretle)
+const markInstallmentPaid = catchAsync(async (req, res, next) => {
+  const { id, paymentId } = req.params;
+  const { paymentMethod = 'CASH', paidAt } = req.body;
+
+  const VALID_METHODS = ['CASH', 'IYZICO', 'BANK_TRANSFER', 'OTHER'];
+  if (!VALID_METHODS.includes(paymentMethod)) {
+    return next(new AppError(`Geçerli ödeme yöntemleri: ${VALID_METHODS.join(', ')}`, 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  const payment = await prisma.subscriptionPayment.findFirst({
+    where: { id: parseInt(paymentId), accountId: parseInt(id) }
+  });
+
+  if (!payment) {
+    return next(new AppError('Ödeme kaydı bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+  }
+  if (payment.status === 'PAID') {
+    return next(new AppError('Bu taksit zaten ödenmiş', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  const updated = await prisma.subscriptionPayment.update({
+    where: { id: parseInt(paymentId) },
+    data: {
+      status: 'PAID',
+      paymentMethod,
+      paidAt: paidAt ? new Date(paidAt) : new Date()
+    }
+  });
+
+  res.json({
+    status: 'success',
+    data: updated,
+    message: `${payment.installmentNumber}. taksit ödendi`
   });
 });
 
@@ -1209,10 +1343,14 @@ const getSubscriptionHistory = catchAsync(async (req, res, next) => {
 
   const payments = await prisma.subscriptionPayment.findMany({
     where: { accountId: parseInt(id) },
-    orderBy: { paidAt: 'desc' }
+    orderBy: { createdAt: 'desc' }
   });
 
-  const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+  const paidPayments = payments.filter(p => p.status === 'PAID');
+  const pendingPayments = payments.filter(p => p.status === 'PENDING');
+  const overduePayments = payments.filter(p => p.status === 'OVERDUE');
+  const totalPaid = paidPayments.reduce((sum, p) => sum + parseFloat(p.installmentAmount || 0), 0);
+  const totalPending = pendingPayments.reduce((sum, p) => sum + parseFloat(p.installmentAmount || 0), 0);
 
   let remainingDays = null;
   let isExpired = false;
@@ -1222,6 +1360,11 @@ const getSubscriptionHistory = catchAsync(async (req, res, next) => {
     isExpired = diff < 0;
   }
 
+  // Plan detayını DB'den çek
+  const planDetails = account.subscriptionPlan
+    ? await prisma.plans.findUnique({ where: { key: account.subscriptionPlan } })
+    : null;
+
   res.json({
     status: 'success',
     data: {
@@ -1229,12 +1372,23 @@ const getSubscriptionHistory = catchAsync(async (req, res, next) => {
         ...account,
         remainingDays,
         isExpired,
-        planDetails: SUBSCRIPTION_PLANS[account.subscriptionPlan] || null
+        planDetails: planDetails ? {
+          key: planDetails.key,
+          name: planDetails.name,
+          price: parseFloat(planDetails.price),
+          yearlyPrice: planDetails.yearlyPrice ? parseFloat(planDetails.yearlyPrice) : null,
+          color: planDetails.color,
+          icon: planDetails.icon
+        } : null
       },
       payments,
       summary: {
         totalPayments: payments.length,
+        paidCount: paidPayments.length,
+        pendingCount: pendingPayments.length,
+        overdueCount: overduePayments.length,
         totalPaid: parseFloat(totalPaid.toFixed(2)),
+        totalPending: parseFloat(totalPending.toFixed(2)),
         currency: 'TRY'
       }
     }
@@ -1308,6 +1462,7 @@ export {
   changeAccountPlan,
   updateSubscriptionSettings,
   addSubscriptionPayment,
+  markInstallmentPaid,
   getSubscriptionHistory,
   updateDemoExpiry,
   // 🎯 DEMO YÖNETİMİ

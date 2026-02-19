@@ -1,5 +1,6 @@
 import express from 'express';
 import * as adminController from '../controllers/adminController.js';
+import * as planController from '../controllers/planController.js';
 import { isAuthenticated, restrictTo } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -23,7 +24,16 @@ router.get('/subscriptions', adminController.getAllAccountsWithPlans);
 router.patch('/accounts/:id/subscription', adminController.updateSubscriptionSettings);
 router.get('/accounts/:id/subscription/history', adminController.getSubscriptionHistory);
 router.post('/accounts/:id/subscription/payments', adminController.addSubscriptionPayment);
+router.patch('/accounts/:id/subscription/payments/:paymentId/pay', adminController.markInstallmentPaid);
 router.patch('/accounts/:id/demo-expiry', adminController.updateDemoExpiry);
+
+// 📦 PLAN YÖNETİMİ (Admin)
+router.get('/plans', planController.getAllPlans);
+router.post('/plans', planController.createPlan);
+router.get('/plans/:id', planController.getPlanById);
+router.put('/plans/:id', planController.updatePlan);
+router.delete('/plans/:id', planController.deletePlan);
+router.patch('/plans/:id/toggle', planController.togglePlanStatus);
 
 // 🎯 DEMO HESAP YÖNETİMİ (Admin)
 router.get('/demo-accounts/pending', adminController.getPendingDemoAccounts);

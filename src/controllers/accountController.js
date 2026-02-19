@@ -1,12 +1,45 @@
 import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
 import prisma from '../lib/prisma.js';
-import {
-  SUBSCRIPTION_PLANS,
-  PLAN_COLORS,
-  PLAN_ICONS,
-  suggestUpgrade
-} from '../../subscriptionPlans.js';
+
+// ─── YARDIMCI ────────────────────────────────────────────────────────────────
+
+// DB'den plan getir, yoksa fallback
+const getPlanFromDB = async (planKey) => {
+  const plan = await prisma.plans.findUnique({ where: { key: planKey } });
+  if (plan) return plan;
+
+  // Fallback: bilinmeyen plan key'i için minimal değerler
+  return {
+    key: planKey,
+    name: planKey,
+    displayName: planKey,
+    price: 0,
+    yearlyPrice: null,
+    currency: 'TRY',
+    color: '#95a5a6',
+    icon: '📦',
+    popular: false,
+    isDemo: false,
+    trialDays: null,
+    features: {},
+    limits: { maxStaff: null, maxClients: null, maxAppointmentsPerMonth: null, maxServices: null }
+  };
+};
+
+// Sıradaki üst planı bul
+const getNextPlan = async (currentKey) => {
+  const plans = await prisma.plans.findMany({
+    where: { isActive: true, isDemo: false },
+    orderBy: { sortOrder: 'asc' }
+  });
+
+  const idx = plans.findIndex(p => p.key === currentKey);
+  if (idx === -1 || idx === plans.length - 1) return null;
+  return plans[idx + 1];
+};
+
+// ─── CONTROLLER'LAR ──────────────────────────────────────────────────────────
 
 const getSubscription = async (req, res, next) => {
   try {
@@ -39,7 +72,12 @@ const getSubscription = async (req, res, next) => {
     }
 
     const planKey = account.subscriptionPlan || 'PROFESSIONAL';
-    const planDetails = SUBSCRIPTION_PLANS[planKey] || SUBSCRIPTION_PLANS['PROFESSIONAL'];
+    const [planDetails, nextPlan] = await Promise.all([
+      getPlanFromDB(planKey),
+      getNextPlan(planKey)
+    ]);
+
+    const limits = planDetails.limits || {};
 
     // Gerçek kullanım istatistikleri
     const [staffCount, clientCount, serviceCount, appointmentCount] = await Promise.all([
@@ -59,27 +97,27 @@ const getSubscription = async (req, res, next) => {
     const usage = {
       staff: {
         current: staffCount,
-        limit: planDetails.limits.maxStaff,
-        isUnlimited: planDetails.limits.maxStaff === null
+        limit: limits.maxStaff ?? null,
+        isUnlimited: limits.maxStaff == null
       },
       clients: {
         current: clientCount,
-        limit: planDetails.limits.maxClients,
-        isUnlimited: planDetails.limits.maxClients === null
+        limit: limits.maxClients ?? null,
+        isUnlimited: limits.maxClients == null
       },
       services: {
         current: serviceCount,
-        limit: planDetails.limits.maxServices,
-        isUnlimited: planDetails.limits.maxServices === null
+        limit: limits.maxServices ?? null,
+        isUnlimited: limits.maxServices == null
       },
       appointmentsThisMonth: {
         current: appointmentCount,
-        limit: planDetails.limits.maxAppointmentsPerMonth,
-        isUnlimited: planDetails.limits.maxAppointmentsPerMonth === null
+        limit: limits.maxAppointmentsPerMonth ?? null,
+        isUnlimited: limits.maxAppointmentsPerMonth == null
       }
     };
 
-    // Demo hesap bilgisi
+    // Demo bilgisi
     let demoInfo = null;
     if (account.isDemoAccount) {
       const now = new Date();
@@ -91,14 +129,14 @@ const getSubscription = async (req, res, next) => {
         isDemoAccount: true,
         demoStatus: account.demoStatus,
         demoExpiresAt: account.demoExpiresAt,
+        trialDays: planDetails.trialDays || 30,
         remainingHours,
+        remainingDays: Math.floor(remainingHours / 24),
         isExpired: expiresAt ? now > expiresAt : false
       };
     }
 
-    const suggestedUpgrade = suggestUpgrade(planKey);
-
-    // Kalan gün hesapla
+    // Abonelik kalan gün
     let remainingDays = null;
     let isSubscriptionExpired = false;
     if (account.subscriptionEndDate) {
@@ -107,6 +145,11 @@ const getSubscription = async (req, res, next) => {
       isSubscriptionExpired = diff < 0;
     }
 
+    // billingCycle label
+    const billingCycleLabel =
+      account.billingCycle === 'YEARLY' ? 'Yıllık' :
+      account.billingCycle === 'MONTHLY' ? 'Aylık' : null;
+
     res.status(200).json({
       status: 'success',
       data: {
@@ -114,33 +157,37 @@ const getSubscription = async (req, res, next) => {
           key: planKey,
           name: planDetails.name,
           displayName: planDetails.displayName,
-          price: planDetails.price,
+          price: parseFloat(planDetails.price),
+          yearlyPrice: planDetails.yearlyPrice ? parseFloat(planDetails.yearlyPrice) : null,
           currency: planDetails.currency || 'TRY',
-          duration: account.billingCycle === 'YEARLY' ? 'Yıllık' : account.billingCycle === 'MONTHLY' ? 'Aylık' : planDetails.duration,
-          color: PLAN_COLORS[planKey],
-          icon: PLAN_ICONS[planKey],
-          popular: planDetails.popular || false
+          duration: billingCycleLabel || 'Aylık',
+          color: planDetails.color,
+          icon: planDetails.icon,
+          popular: planDetails.popular || false,
+          isDemo: planDetails.isDemo || false
         },
         billing: {
           billingCycle: account.billingCycle || null,
-          billingCycleLabel: account.billingCycle === 'YEARLY' ? 'Yıllık' : account.billingCycle === 'MONTHLY' ? 'Aylık' : null,
+          billingCycleLabel,
           subscriptionStartDate: account.subscriptionStartDate || null,
           subscriptionEndDate: account.subscriptionEndDate || null,
           subscriptionStatus: account.subscriptionStatus || 'ACTIVE',
           remainingDays,
           isExpired: isSubscriptionExpired
         },
-        features: planDetails.features,
-        limits: planDetails.limits,
+        features: planDetails.features || {},
+        limits,
         usage,
         demo: demoInfo,
-        suggestedUpgrade: suggestedUpgrade
+        suggestedUpgrade: nextPlan
           ? {
-              key: suggestedUpgrade,
-              name: SUBSCRIPTION_PLANS[suggestedUpgrade].name,
-              displayName: SUBSCRIPTION_PLANS[suggestedUpgrade].displayName,
-              price: SUBSCRIPTION_PLANS[suggestedUpgrade].price,
-              icon: PLAN_ICONS[suggestedUpgrade]
+              key: nextPlan.key,
+              name: nextPlan.name,
+              displayName: nextPlan.displayName,
+              price: parseFloat(nextPlan.price),
+              yearlyPrice: nextPlan.yearlyPrice ? parseFloat(nextPlan.yearlyPrice) : null,
+              icon: nextPlan.icon,
+              color: nextPlan.color
             }
           : null
       }
@@ -158,9 +205,7 @@ const completeOnboarding = async (req, res, next) => {
       return next(new AppError('Hesap bilgisi bulunamadı', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
     }
 
-    const account = await prisma.accounts.findUnique({
-      where: { id: accountId }
-    });
+    const account = await prisma.accounts.findUnique({ where: { id: accountId } });
 
     if (!account) {
       return next(new AppError('Hesap bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));

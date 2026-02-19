@@ -470,22 +470,64 @@ enum SubscriptionStatus {
   SUSPENDED
 }
 
+model Plans {
+  id            Int      @id @default(autoincrement()) @map("PlanID")
+  key           String   @unique @map("Key")
+  name          String   @map("Name")
+  displayName   String   @map("DisplayName")
+  price         Decimal  @map("Price") @db.Decimal(10, 2)
+  yearlyPrice   Decimal? @map("YearlyPrice") @db.Decimal(10, 2)
+  currency      String   @default("TRY") @map("Currency")
+  color         String?  @map("Color")
+  icon          String?  @map("Icon")
+  popular       Boolean  @default(false) @map("Popular")
+  isActive      Boolean  @default(true) @map("IsActive")
+  isDemo        Boolean  @default(false) @map("IsDemo")
+  trialDays     Int?     @map("TrialDays")
+  sortOrder     Int      @default(0) @map("SortOrder")
+  features      Json     @map("Features")
+  limits        Json     @map("Limits")
+  createdAt     DateTime @default(now()) @map("CreatedAt")
+  updatedAt     DateTime @default(now()) @updatedAt @map("UpdatedAt")
+
+  @@map("Plans")
+}
+
 model SubscriptionPayment {
-  id          Int          @id @default(autoincrement()) @map("PaymentID")
-  accountId   Int          @map("AccountID")
-  plan        String       @map("Plan")
-  billingCycle BillingCycle @map("BillingCycle")
-  amount      Decimal      @map("Amount") @db.Decimal(10, 2)
-  currency    String       @default("TRY") @map("Currency") @db.VarChar(10)
-  periodStart DateTime     @map("PeriodStart")
-  periodEnd   DateTime     @map("PeriodEnd")
-  paidAt      DateTime     @default(now()) @map("PaidAt")
-  notes       String?      @map("Notes")
-  createdAt   DateTime     @default(now()) @map("CreatedAt")
-  account     Accounts     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  id                Int               @id @default(autoincrement()) @map("PaymentID")
+  accountId         Int               @map("AccountID")
+  plan              String            @map("Plan")
+  billingCycle      BillingCycle?     @map("BillingCycle")
+  totalAmount       Decimal           @map("TotalAmount") @db.Decimal(10, 2)
+  installmentAmount Decimal           @map("InstallmentAmount") @db.Decimal(10, 2)
+  currency          String            @default("TRY") @map("Currency") @db.VarChar(10)
+  paymentMethod     SubPaymentMethod  @default(CASH) @map("PaymentMethod")
+  periodStart       DateTime?         @map("PeriodStart")
+  periodEnd         DateTime?         @map("PeriodEnd")
+  installmentNumber Int               @default(1) @map("InstallmentNumber")
+  totalInstallments Int               @default(1) @map("TotalInstallments")
+  dueDate           DateTime?         @map("DueDate")
+  paidAt            DateTime?         @map("PaidAt")
+  status            SubPaymentStatus  @default(PENDING) @map("Status")
+  notes             String?           @map("Notes")
+  createdAt         DateTime          @default(now()) @map("CreatedAt")
+  account           Accounts          @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId], map: "idx_sub_payment_account")
   @@map("SubscriptionPayments")
+}
+
+enum SubPaymentMethod {
+  CASH          // Nakit
+  IYZICO        // iyzico online ödeme
+  BANK_TRANSFER // IBAN / Havale
+  OTHER         // Diğer
+}
+
+enum SubPaymentStatus {
+  PAID     // Ödendi
+  PENDING  // Bekliyor
+  OVERDUE  // Gecikmiş
 }
 
 enum DemoStatus {

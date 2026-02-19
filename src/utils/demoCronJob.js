@@ -2,98 +2,98 @@ import cron from 'node-cron';
 import prisma from '../lib/prisma.js';
 
 /**
- * DEMO HESAP SURE KONTROLU - CRON JOB
- * 
- * Her 6 saatte bir calisir ve:
- * 1. Suresi dolan aktif demo hesaplari bulur
- * 2. Durumunu PENDING_APPROVAL yapar (admin onayi icin)
- * 3. Admin panelinde bildirim gosterir
+ * 1) Süresi dolan DEMO hesapları askıya al
+ *    demoStatus: ACTIVE + demoExpiresAt geçmiş → isActive: false, demoStatus: EXPIRED
  */
-
 const checkExpiredDemoAccounts = async () => {
   try {
-    console.log('🔍 Demo hesap süre kontrolü başlatılıyor...');
-    
     const now = new Date();
-    
-    // Süresi dolmuş aktif demo hesapları bul
+
     const expiredDemos = await prisma.accounts.findMany({
       where: {
         isDemoAccount: true,
         demoStatus: 'ACTIVE',
-        demoExpiresAt: {
-          lte: now // Süre dolmuş
-        }
+        demoExpiresAt: { lte: now }
       },
-      include: {
-        users: {
-          where: { role: 'OWNER' },
-          select: {
-            id: true,
-            username: true,
-            email: true
-          }
-        }
-      }
+      select: { id: true, businessName: true, email: true }
     });
 
-    if (expiredDemos.length === 0) {
-      console.log('✅ Süresi dolmuş demo hesap bulunamadı');
-      return;
-    }
+    if (expiredDemos.length === 0) return;
 
-    console.log(`⚠️ ${expiredDemos.length} demo hesabın süresi doldu!`);
+    console.log(`⚠️ ${expiredDemos.length} demo hesabın süresi doldu — askıya alınıyor...`);
 
-    // Her birini 'PENDING_APPROVAL' durumuna al
     for (const demo of expiredDemos) {
       await prisma.accounts.update({
         where: { id: demo.id },
         data: {
-          demoStatus: 'PENDING_APPROVAL',
-          isActive: false // Geçici olarak kısıtla, admin onaylayana kadar
+          demoStatus: 'EXPIRED',
+          isActive: false
         }
       });
-
-      console.log(`  📌 Demo Hesap: ${demo.businessName} (${demo.email}) - ONAY BEKLİYOR`);
-      
-      // TODO: Admin'e email/bildirim gönder
-      // TODO: Owner'a "demo süresi doldu, devam etmek için lütfen bekleyin" maili gönder
+      console.log(`  📌 Demo askıya alındı: ${demo.businessName} (${demo.email})`);
     }
 
-    console.log(`✅ ${expiredDemos.length} demo hesap 'PENDING_APPROVAL' durumuna alındı`);
-
+    console.log(`✅ ${expiredDemos.length} demo hesap askıya alındı`);
   } catch (error) {
     console.error('❌ Demo hesap süre kontrolü hatası:', error);
   }
 };
 
 /**
- * CRON JOB AYARLARI
- * 
- * Cron pattern: 0 (star)(star)/6 (star) (star) (star)
- * Dakika: 0
- * Saat: Her 6 saatte bir (0, 6, 12, 18)
- * Gun: Her gun
- * 
- * Test icin daha sik calistirmak isterseniz:
- * Pattern: (star)(star)/5 (star) (star) (star) (star) = Her 5 dakikada bir
- * Pattern: 0 (star) (star) (star) (star) = Her saat basi
+ * 2) Süresi dolan ÜCRETLİ abonelikleri askıya al
+ *    subscriptionStatus: ACTIVE + subscriptionEndDate geçmiş → isActive: false, subscriptionStatus: EXPIRED
  */
+const checkExpiredSubscriptions = async () => {
+  try {
+    const now = new Date();
 
+    const expiredSubs = await prisma.accounts.findMany({
+      where: {
+        isDemoAccount: false,
+        subscriptionStatus: 'ACTIVE',
+        subscriptionEndDate: { lte: now }
+      },
+      select: { id: true, businessName: true, email: true, subscriptionPlan: true }
+    });
+
+    if (expiredSubs.length === 0) return;
+
+    console.log(`⚠️ ${expiredSubs.length} aboneliğin süresi doldu — askıya alınıyor...`);
+
+    for (const sub of expiredSubs) {
+      await prisma.accounts.update({
+        where: { id: sub.id },
+        data: {
+          subscriptionStatus: 'EXPIRED',
+          isActive: false
+        }
+      });
+      console.log(`  📌 Abonelik sona erdi: ${sub.businessName} (${sub.email}) — Plan: ${sub.subscriptionPlan}`);
+    }
+
+    console.log(`✅ ${expiredSubs.length} abonelik askıya alındı`);
+  } catch (error) {
+    console.error('❌ Ücretli abonelik süre kontrolü hatası:', error);
+  }
+};
+
+/**
+ * Her 6 saatte bir çalışır (00:00, 06:00, 12:00, 18:00)
+ */
 const startDemoCronJob = () => {
-  // Her 6 saatte bir çalışır (00:00, 06:00, 12:00, 18:00)
   cron.schedule('0 */6 * * *', async () => {
-    console.log('⏰ Cron Job çalışıyor: Demo hesap süre kontrolü');
+    console.log('⏰ Cron: Hesap süre kontrolleri başlatılıyor...');
     await checkExpiredDemoAccounts();
+    await checkExpiredSubscriptions();
   });
 
-  console.log('✅ Demo hesap cron job başlatıldı (Her 6 saatte bir çalışacak)');
+  console.log('✅ Hesap süre kontrol cron job başlatıldı (Her 6 saatte bir)');
 };
 
-// İlk başlatmada bir kez manuel kontrol (opsiyonel)
 const initialCheck = async () => {
-  console.log('🚀 İlk demo hesap kontrolü yapılıyor...');
+  console.log('🚀 İlk hesap süre kontrolü başlatılıyor...');
   await checkExpiredDemoAccounts();
+  await checkExpiredSubscriptions();
 };
 
-export { startDemoCronJob, checkExpiredDemoAccounts, initialCheck };
+export { startDemoCronJob, checkExpiredDemoAccounts, checkExpiredSubscriptions, initialCheck };

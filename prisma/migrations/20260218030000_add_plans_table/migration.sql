@@ -1,0 +1,185 @@
+-- CreateTable: Plans (Dinamik Abonelik Planları)
+CREATE TABLE "Plans" (
+  "PlanID"       SERIAL PRIMARY KEY,
+  "Key"          VARCHAR(50)    NOT NULL UNIQUE,
+  "Name"         VARCHAR(100)   NOT NULL,
+  "DisplayName"  VARCHAR(150)   NOT NULL,
+  "Price"        DECIMAL(10,2)  NOT NULL,
+  "YearlyPrice"  DECIMAL(10,2),
+  "Currency"     VARCHAR(10)    NOT NULL DEFAULT 'TRY',
+  "Color"        VARCHAR(100),
+  "Icon"         VARCHAR(50),
+  "Popular"      BOOLEAN        NOT NULL DEFAULT false,
+  "IsActive"     BOOLEAN        NOT NULL DEFAULT true,
+  "IsDemo"       BOOLEAN        NOT NULL DEFAULT false,
+  "TrialDays"    INTEGER,
+  "SortOrder"    INTEGER        NOT NULL DEFAULT 0,
+  "Features"     JSONB          NOT NULL DEFAULT '{}',
+  "Limits"       JSONB          NOT NULL DEFAULT '{}',
+  "CreatedAt"    TIMESTAMP(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "UpdatedAt"    TIMESTAMP(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Seed: Mevcut planları DB'ye aktar
+INSERT INTO "Plans" ("Key", "Name", "DisplayName", "Price", "YearlyPrice", "Currency", "Color", "Icon", "Popular", "IsActive", "IsDemo", "TrialDays", "SortOrder", "Features", "Limits") VALUES
+
+(
+  'DEMO',
+  'Demo',
+  'Demo Paketi',
+  0,
+  NULL,
+  'TRY',
+  '#95a5a6',
+  '🎁',
+  false,
+  true,
+  true,
+  30,
+  0,
+  '{
+    "appointments": true,
+    "clients": true,
+    "staff": true,
+    "services": true,
+    "reports": { "basic": true, "advanced": true, "export": true, "custom": true },
+    "sms": 50,
+    "permissions": true,
+    "referenceTracking": true,
+    "expenseManagement": true,
+    "multipleLocations": true,
+    "financialReports": true,
+    "sessionTracking": true,
+    "apiAccess": true,
+    "prioritySupport": false,
+    "customization": false,
+    "branchReporting": true
+  }',
+  '{
+    "maxStaff": null,
+    "maxClients": null,
+    "maxAppointmentsPerMonth": null,
+    "maxServices": null
+  }'
+),
+
+(
+  'STARTER',
+  'Başlangıç',
+  'Başlangıç Paketi',
+  799,
+  7990,
+  'TRY',
+  '#3498db',
+  '🚀',
+  false,
+  true,
+  false,
+  NULL,
+  1,
+  '{
+    "appointments": true,
+    "clients": true,
+    "staff": true,
+    "services": true,
+    "reports": { "basic": true, "advanced": false, "export": false, "custom": false },
+    "sms": 50,
+    "permissions": false,
+    "referenceTracking": false,
+    "expenseManagement": false,
+    "multipleLocations": false,
+    "financialReports": false,
+    "sessionTracking": true,
+    "apiAccess": false,
+    "prioritySupport": false,
+    "customization": false,
+    "branchReporting": false
+  }',
+  '{
+    "maxStaff": 2,
+    "maxClients": 100,
+    "maxAppointmentsPerMonth": null,
+    "maxServices": null
+  }'
+),
+
+(
+  'PROFESSIONAL',
+  'Profesyonel',
+  'Profesyonel Paket',
+  1299,
+  12990,
+  'TRY',
+  '#9b59b6',
+  '⭐',
+  true,
+  true,
+  false,
+  NULL,
+  2,
+  '{
+    "appointments": true,
+    "clients": true,
+    "staff": true,
+    "services": true,
+    "reports": { "basic": true, "advanced": true, "export": true, "custom": false },
+    "sms": 200,
+    "permissions": true,
+    "referenceTracking": true,
+    "expenseManagement": true,
+    "multipleLocations": false,
+    "financialReports": true,
+    "sessionTracking": true,
+    "apiAccess": false,
+    "prioritySupport": false,
+    "customization": false,
+    "branchReporting": false
+  }',
+  '{
+    "maxStaff": 5,
+    "maxClients": null,
+    "maxAppointmentsPerMonth": null,
+    "maxServices": null
+  }'
+),
+
+(
+  'PREMIUM',
+  'Premium',
+  'Premium Paket',
+  2199,
+  21990,
+  'TRY',
+  '#e74c3c',
+  '💎',
+  false,
+  true,
+  false,
+  NULL,
+  3,
+  '{
+    "appointments": true,
+    "clients": true,
+    "staff": true,
+    "services": true,
+    "reports": { "basic": true, "advanced": true, "export": true, "custom": true },
+    "sms": 500,
+    "permissions": true,
+    "referenceTracking": true,
+    "expenseManagement": true,
+    "multipleLocations": true,
+    "financialReports": true,
+    "sessionTracking": true,
+    "apiAccess": true,
+    "prioritySupport": true,
+    "customization": true,
+    "branchReporting": true
+  }',
+  '{
+    "maxStaff": null,
+    "maxClients": null,
+    "maxAppointmentsPerMonth": null,
+    "maxServices": null,
+    "maxLocations": null
+  }'
+);

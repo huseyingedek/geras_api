@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma.js';
 import { sendSMS, prepareAppointmentSMS, prepareAppointmentCancelSMS } from '../utils/smsService.js';
+import { getPlanLimitError } from '../utils/planLimitChecker.js';
 
 export const createQuickAppointment = async (req, res) => {
   try {
@@ -353,6 +354,11 @@ export const createAppointment = async (req, res) => {
         success: false,
         message: 'Gerekli alanlar eksik: saleId, staffId, appointmentDate'
       });
+    }
+
+    const limitError = await getPlanLimitError(accountId, 'maxAppointmentsPerMonth');
+    if (limitError) {
+      return res.status(limitError.statusCode || 403).json({ status: 'fail', message: limitError.message, errorCode: limitError.errorCode });
     }
 
     const sale = await prisma.sales.findFirst({

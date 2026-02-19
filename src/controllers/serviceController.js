@@ -1,6 +1,7 @@
 import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
 import prisma from '../lib/prisma.js'; // Merkezi instance kullan
+import { checkPlanLimit } from '../utils/planLimitChecker.js';
 
 const catchAsync = fn => {
   return (req, res, next) => {
@@ -29,7 +30,10 @@ const createService = catchAsync(async (req, res, next) => {
   if (!serviceName || !price) {
     return next(new AppError('Hizmet adı ve fiyat bilgisi zorunludur', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
   }
-  
+
+  const withinLimit = await checkPlanLimit(accountId, 'maxServices', next);
+  if (!withinLimit) return;
+
   // Fiyat validasyonu
   const priceValue = typeof price === 'string' ? parseFloat(price) : price;
   if (isNaN(priceValue) || priceValue < 0) {

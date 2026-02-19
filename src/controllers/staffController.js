@@ -3,6 +3,7 @@ import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
 import prisma from '../lib/prisma.js'; // Merkezi instance kullan
 import { assignResourcePermissionsToStaff } from '../utils/permissionUtils.js';
+import { checkPlanLimit } from '../utils/planLimitChecker.js';
 
 const catchAsync = fn => {
   return (req, res, next) => {
@@ -32,7 +33,10 @@ const createStaff = catchAsync(async (req, res, next) => {
   if (!fullName) {
     return next(new AppError('Personel adı zorunludur', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
   }
-  
+
+  const withinLimit = await checkPlanLimit(accountId, 'maxStaff', next);
+  if (!withinLimit) return;
+
   if (email) {
     const existingStaffWithEmail = await prisma.staff.findFirst({
       where: {

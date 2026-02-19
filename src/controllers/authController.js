@@ -97,39 +97,53 @@ const login = async (req, res, next) => {
       return next(new AppError('Hatalı email/telefon veya şifre', 401, ErrorCodes.USER_AUTHENTICATION_FAILED));
     }
     
-    // 🎯 Demo hesap kontrolleri
+    // 🎯 Hesap erişim kontrolleri (ADMIN hariç)
     if (user.role !== 'ADMIN' && user.accountId) {
-      if (!user.account || user.account.isActive === false) {
-        // Demo hesap kontrolü
-        if (user.account && user.account.isDemoAccount) {
-          const demoStatus = user.account.demoStatus;
-          
-          if (demoStatus === 'PENDING_APPROVAL') {
-            return next(new AppError('Demo süreniz dolmuştur. Hesabınız admin onayı bekliyor. Lütfen bekleyiniz.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
-          }
-          
-          if (demoStatus === 'EXPIRED' || demoStatus === 'RESTRICTED') {
-            return next(new AppError('Demo süreniz sona ermiştir. Devam etmek için lütfen yetkili kişi ile iletişime geçin.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
-          }
-        }
-        
-        return next(new AppError('İşletmeniz kısıtlanmıştır. Lütfen yetkili kişi ile iletişime geçin.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
+      const account = user.account;
+
+      if (!account) {
+        return next(new AppError('İşletme hesabı bulunamadı. Lütfen yetkili kişi ile iletişime geçin.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
       }
-      
-      // Demo süre kontrolü (aktif demo hesaplar için)
-      if (user.account.isDemoAccount && user.account.demoStatus === 'ACTIVE') {
+
+      // --- DEMO HESAP kontrolleri ---
+      if (account.isDemoAccount) {
         const now = new Date();
-        if (user.account.demoExpiresAt && user.account.demoExpiresAt <= now) {
-          // Süre dolmuş ama henüz cron çalışmamış, şimdi güncelle
+
+        // Cron henüz çalışmamışsa anlık kontrol — süresi geçmişse askıya al
+        if (account.demoStatus === 'ACTIVE' && account.demoExpiresAt && account.demoExpiresAt <= now) {
           await prisma.accounts.update({
             where: { id: user.accountId },
-            data: {
-              demoStatus: 'PENDING_APPROVAL',
-              isActive: false
-            }
+            data: { demoStatus: 'EXPIRED', isActive: false }
           });
-          
-          return next(new AppError('Demo süreniz dolmuştur. Hesabınız admin onayına gönderildi. Lütfen bekleyiniz.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
+          return next(new AppError('30 günlük demo süreniz dolmuştur. Devam etmek için lütfen yetkili kişi ile iletişime geçin.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
+        }
+
+        if (account.demoStatus === 'EXPIRED' || account.demoStatus === 'PENDING_APPROVAL') {
+          return next(new AppError('Demo süreniz sona ermiştir. Devam etmek için lütfen yetkili kişi ile iletişime geçin.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
+        }
+
+        if (account.demoStatus === 'RESTRICTED' || account.isActive === false) {
+          return next(new AppError('İşletmeniz kısıtlanmıştır. Lütfen yetkili kişi ile iletişime geçin.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
+        }
+      } else {
+        // --- ÜCRETLİ HESAP kontrolleri ---
+
+        // Hesap pasif
+        if (account.isActive === false) {
+          // Abonelik süresi dolmuş mu?
+          if (account.subscriptionStatus === 'EXPIRED') {
+            return next(new AppError('Abonelik süreniz sona ermiştir. Lütfen yetkili kişi ile iletişime geçin.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
+          }
+          return next(new AppError('İşletmeniz kısıtlanmıştır. Lütfen yetkili kişi ile iletişime geçin.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
+        }
+
+        // Cron henüz çalışmamışsa anlık kontrol — abonelik süresi geçmişse askıya al
+        if (account.subscriptionStatus === 'ACTIVE' && account.subscriptionEndDate && new Date(account.subscriptionEndDate) <= new Date()) {
+          await prisma.accounts.update({
+            where: { id: user.accountId },
+            data: { subscriptionStatus: 'EXPIRED', isActive: false }
+          });
+          return next(new AppError('Abonelik süreniz sona ermiştir. Lütfen yetkili kişi ile iletişime geçin.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
         }
       }
     }

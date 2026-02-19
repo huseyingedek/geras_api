@@ -15,6 +15,7 @@ const ErrorCodes = {
   
   // İşletme Hataları - 2100 serisi
   ACCOUNT_RESTRICTED: 'ACC_2100',
+  PLAN_LIMIT_EXCEEDED: 'ACC_2101',
   
   // Veritabanı Hataları - 3000 serisi
   DB_CONNECTION_ERROR: 'DB_3000',
