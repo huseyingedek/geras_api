@@ -82,11 +82,16 @@ model Clients {
   lastName     String         @map("LastName")
   phone        String?        @map("Phone")
   email        String?        @map("Email")
-  gender       Gender         @default(UNISEX) @map("Gender")
-  birthDate    DateTime?      @map("BirthDate") @db.Date
-  isActive     Boolean        @default(true) @map("IsActive")
-  createdAt    DateTime       @default(now()) @map("CreatedAt")
-  updatedAt    DateTime       @default(now()) @updatedAt @map("UpdatedAt")
+  gender              Gender         @default(UNISEX) @map("Gender")
+  birthDate           DateTime?      @map("BirthDate") @db.Date
+  marketingConsent        Boolean        @default(false) @map("MarketingConsent")
+  consentDate             DateTime?      @map("ConsentDate")
+  consentToken            String?        @unique @map("ConsentToken")
+  consentRequestedAt      DateTime?      @map("ConsentRequestedAt")
+  consentTokenExpiresAt   DateTime?      @map("ConsentTokenExpiresAt")
+  isActive                Boolean        @default(true) @map("IsActive")
+  createdAt           DateTime       @default(now()) @map("CreatedAt")
+  updatedAt           DateTime       @default(now()) @updatedAt @map("UpdatedAt")
   appointments Appointments[]
   account      Accounts       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   sales        Sales[]

@@ -26,6 +26,11 @@ export const createQuickAppointment = async (req, res) => {
       });
     }
 
+    const limitError = await getPlanLimitError(accountId, 'maxAppointmentsPerMonth');
+    if (limitError) {
+      return res.status(limitError.statusCode || 403).json({ status: 'fail', message: limitError.message, errorCode: limitError.errorCode });
+    }
+
     const appointmentStart = new Date(appointmentDate);
     const now = new Date();
 

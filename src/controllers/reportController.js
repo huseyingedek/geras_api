@@ -695,221 +695,382 @@ export const debugPayments = async (req, res) => {
 };
 
 
+// ─── Yardımcı: Müşteri sıcaklık derecesi ───────────────────────────────────
+function getTemperature(purchaseCount, daysSinceLast) {
+  if (purchaseCount === 0) return { key: 'COLD', label: 'Soğuk', color: '#6B7280' };
+  if (daysSinceLast <= 30)  return { key: 'HOT',  label: 'Sıcak', color: '#EF4444' };
+  if (daysSinceLast <= 90)  return { key: 'WARM', label: 'Ilık',  color: '#F59E0B' };
+  if (daysSinceLast <= 180) return { key: 'COLD', label: 'Soğuk', color: '#6B7280' };
+  return { key: 'LOST', label: 'Kayıp', color: '#374151' };
+}
+
+// ─── Yardımcı: Segment belirleme ────────────────────────────────────────────
+function getSegment(loyaltyScore, purchaseCount, daysSinceLast) {
+  if (purchaseCount === 0)   return { key: 'NEW',      label: 'Yeni Kayıt',    priority: 5 };
+  if (daysSinceLast > 180)   return { key: 'LOST',     label: 'Kayıp Müşteri', priority: 1 };
+  if (loyaltyScore >= 75)    return { key: 'VIP',      label: 'VIP',           priority: 6 };
+  if (loyaltyScore >= 50)    return { key: 'LOYAL',    label: 'Sadık',         priority: 5 };
+  if (daysSinceLast > 90)    return { key: 'AT_RISK',  label: 'Risk Altında',  priority: 2 };
+  if (purchaseCount >= 2)    return { key: 'REGULAR',  label: 'Düzenli',       priority: 4 };
+  return { key: 'OCCASIONAL', label: 'Ara Sıra',  priority: 3 };
+}
+
+// ─── Yardımcı: Cinsiyete göre selamlama ────────────────────────────────────
+function getSalutation(gender, firstName) {
+  if (gender === 'FEMALE') return `${firstName} Hanım`;
+  if (gender === 'MALE')   return `${firstName} Bey`;
+  return firstName;
+}
+
+// ─── Yardımcı: Kampanya önerisi ─────────────────────────────────────────────
+function getCampaignRecommendation(segment, temperature, client, favoriteService, avgOrderValue, businessName) {
+  const salut = getSalutation(client.gender, client.firstName);
+  const svc   = favoriteService || null;
+  const biz   = businessName || 'Salonumuz';
+
+  // Her müşteri için farklı varyant seç (client.id'ye göre deterministik)
+  function pick(arr) { return arr[client.id % arr.length]; }
+
+  const campaigns = {
+
+    VIP_HOT: {
+      type: 'LOYALTY_REWARD',
+      title: 'VIP Sadakat Ödülü',
+      messages: [
+        `Sayın ${salut}, ${biz} olarak sizi her ziyaretinizde ağırlamaktan büyük mutluluk duyuyoruz. Değerli VIP müşterimiz olarak bu ay size özel bir sürpriz hazırladık; bir sonraki randevunuzda sizi bekliyoruz.`,
+        `Sayın ${salut}, ${biz} ailesinin en değerli üyelerinden biri olduğunuz için size teşekkür etmek istedik. ${svc ? `${svc} hizmetinizdeki` : 'Her'} sadakatinizin karşılığı olarak sizi özel bir teklifle ağırlamak istiyoruz; uygun gününüzü bize bildirin.`,
+        `Sayın ${salut}, uzun süreli tercihleriniz ve güveniniz bizim için çok değerli. ${biz} ekibi olarak sizi ${svc ? `${svc} konusunda` : 'gelecek ziyaretinizde'} özel avantajlarla karşılamaya hazırız; randevunuzu oluşturun.`,
+      ],
+      action: 'SEND_SMS',
+      urgency: 'LOW',
+      discountSuggestion: '%10-15 indirim veya ücretsiz ek hizmet',
+    },
+
+    VIP_WARM: {
+      type: 'VIP_WINBACK',
+      title: 'VIP Geri Dönüş',
+      messages: [
+        `Sayın ${salut}, ${biz} olarak bir süredir sizi göremedik ve özledik. Değerli VIP müşterimize özel hazırladığımız tekliften yararlanmak için lütfen bizi arayın; sizi yeniden ağırlamaktan onur duyarız.`,
+        `Sayın ${salut}, ${svc ? `${svc} bakımınızın` : 'Rutin bakımınızın'} vakti gelmiş olabilir. ${biz} ekibi olarak sizi VIP özel fiyatlarımızla bekliyoruz; randevunuzu oluşturun ya da bizi arayın.`,
+        `Sayın ${salut}, VIP müşterilerimize sunduğumuz yeni sezon ayrıcalıklarını sizinle paylaşmak istedik. ${biz} olarak uygun bir zamanda sizi görmekten memnuniyet duyarız; bizi aramanızı bekliyoruz.`,
+      ],
+      action: 'CALL_OR_SMS',
+      urgency: 'MEDIUM',
+      discountSuggestion: '%15-20 indirim',
+    },
+
+    LOYAL_HOT: {
+      type: 'UPSELL',
+      title: 'Premium Hizmet Teklifi',
+      messages: [
+        `Sayın ${salut}, ${svc ? `${svc} hizmetimizi` : 'hizmetlerimizi'} düzenli olarak tercih ettiğiniz için ${biz} ekibi adına teşekkür ederiz. Bu dönem size özel hazırladığımız premium bakım paketini tanıtmak isteriz; detaylar için bizi arayın.`,
+        `Sayın ${salut}, sadakatiniz bizim için çok değerli. ${biz} olarak size daha kapsamlı bir deneyim yaşatmak istiyoruz. Yeni premium ${svc ? `${svc}` : 'hizmet'} paketimiz hakkında bilgi almak için bizi arayabilirsiniz.`,
+        `Sayın ${salut}, ${biz}'deki düzenli ziyaretleriniz takdire şayan. Bu ayrıcalıklı müşteri ilişkimizi ileriye taşımak için size özel bir paket teklifi hazırladık; uygun gününüzde görüşelim.`,
+      ],
+      action: 'SEND_SMS',
+      urgency: 'LOW',
+      discountSuggestion: 'Paket satış veya üst segment hizmet önerisi',
+    },
+
+    LOYAL_WARM: {
+      type: 'RE_ENGAGEMENT',
+      title: 'Geri Dönüş Teklifi',
+      messages: [
+        `Sayın ${salut}, bir süredir ${biz}'i ziyaret etmediniz. ${svc ? `${svc} bakımınızın` : 'Rutin bakımınızın'} vakti gelmiş olabilir; size özel indirimle bu haftaya randevu ayarlamak ister misiniz?`,
+        `Sayın ${salut}, ${biz} ekibi olarak sizi tekrar görmek bizi mutlu edecek. ${svc ? `${svc}` : 'Hizmetlerimiz'} konusunda bu dönem sunduğumuz özel fırsatları sizinle paylaşmak istiyoruz; bizi arayın.`,
+        `Sayın ${salut}, aylık rutin bakımınız için ${biz}'i tercih etmenizi öneririz. Bu döneme özel hazırladığımız fırsat teklifimizden yararlanmak için lütfen bizi arayın ya da randevunuzu oluşturun.`,
+      ],
+      action: 'SEND_SMS',
+      urgency: 'MEDIUM',
+      discountSuggestion: '%10-15 indirim',
+    },
+
+    AT_RISK: {
+      type: 'WIN_BACK',
+      title: 'Geri Kazanma Kampanyası',
+      messages: [
+        `Sayın ${salut}, ${biz} olarak uzun süredir sizi göremedik. Memnuniyetiniz bizim için en öncelikli konudur; varsa bir eksikliğimizi duymak isteriz. Sizi yeniden ağırlamak için özel bir teklifimiz mevcut, bizi arayın.`,
+        `Sayın ${salut}, geçen ziyaretinizden bu yana uzun zaman geçti. ${biz} ekibi sizden haber bekliyordu. Bu dönem size özel hazırladığımız geri dönüş teklifimizden yararlanmak için bizi arayın.`,
+        `Sayın ${salut}, ${svc ? `${svc} konusunda` : 'hizmetlerimiz konusunda'} farklı bir deneyim arayışında olabilirsiniz. ${biz} olarak hizmetlerimizi yeniledik ve sizi tekrar davet etmek istiyoruz; size özel bir teklifimiz var.`,
+      ],
+      action: 'CALL_OR_SMS',
+      urgency: 'HIGH',
+      discountSuggestion: '%20 indirim — aciliyet hissi yarat',
+    },
+
+    LOST: {
+      type: 'AGGRESSIVE_WIN_BACK',
+      title: 'Müşteri Geri Kazanma',
+      messages: [
+        `Sayın ${salut}, çok uzun süredir görüşemiyoruz. ${biz} ekibi olarak sizi ne kadar özlediğimizi bilmenizi istedik. Yeniden kapımızı açarsanız size %25 özel indirim ve ${avgOrderValue > 500 ? 'ücretsiz danışmanlık seansı' : 'özel bir sürpriz hediye'} sunmak istiyoruz.`,
+        `Sayın ${salut}, ${biz}'de sizi tekrar ağırlamak için özel bir teklifimiz var. Uzun aradan sonra geri dönen değerli müşterilerimize sunduğumuz bu özel fırsattan yararlanmak için lütfen bizi arayın.`,
+        `Sayın ${salut}, ${biz} ailesi olarak sizin yokluğunuzu hissettik. Bu özel geri dönüş teklifimizi sizin için sakladık; bizi bir şans daha verirseniz sizi en iyi şekilde karşılamaya hazırız.`,
+      ],
+      action: 'CALL_FIRST_THEN_SMS',
+      urgency: 'VERY_HIGH',
+      discountSuggestion: '%25-30 indirim + kişisel sürpriz',
+    },
+
+    REGULAR_HOT: {
+      type: 'CROSS_SELL',
+      title: 'Yeni Hizmet Tanıtımı',
+      messages: [
+        `Sayın ${salut}, düzenli tercihleriniz için ${biz} ekibi adına teşekkür ederiz. ${svc ? `${svc} dışında` : 'Bu dönem'} yeni eklediğimiz hizmetlerimizi de denemenizi öneririz; ilk denemede size özel fiyat uygulayacağız.`,
+        `Sayın ${salut}, ${biz} olarak hizmet yelpazemizi genişlettik. ${svc ? `${svc}` : 'Mevcut hizmetlerimizin'} yanına bu sezon yeni paketler ekledik; sizin için özel bir tanıtım randevusu ayarlayalım mı?`,
+        `Sayın ${salut}, ${biz}'deki sadakatiniz bizim için teşvik edici. Bu dönem yeni sunduğumuz ${svc ? `${svc} destekli` : ''} bakım paketini sizinle paylaşmak istiyoruz; detaylar için bizi arayın.`,
+      ],
+      action: 'SEND_SMS',
+      urgency: 'LOW',
+      discountSuggestion: 'Yeni hizmet için özel deneme fiyatı',
+    },
+
+    OCCASIONAL: {
+      type: 'FREQUENCY_BOOST',
+      title: 'Düzenli Ziyaret Teklifi',
+      messages: [
+        `Sayın ${salut}, sizi görmek her zaman mutluluk veriyor. ${biz} olarak düzenli gelen müşterilerimize sunduğumuz özel indirim programından siz de yararlanmak ister misiniz? Detaylar için bizi arayın.`,
+        `Sayın ${salut}, ${svc ? `${svc} bakımınızı` : 'Bakım rutininizi'} daha düzenli hale getirmenizi öneririz. ${biz} olarak aylık ziyaretlerde kümülatif indirim kazandıran sadakat programımızdan yararlanabilirsiniz; bizi arayın.`,
+        `Sayın ${salut}, bir sonraki ${svc ? `${svc}` : 'bakım'} randevunuzu ne zaman planlamak istersiniz? ${biz} ekibi olarak sizi özel avantajlarımızla karşılamaya hazırız; uygun tarihi birlikte belirleyelim.`,
+      ],
+      action: 'SEND_SMS',
+      urgency: 'LOW',
+      discountSuggestion: 'Sadakat programını tanıt, düzenli gelmeyi teşvik et',
+    },
+
+    NEW: {
+      type: 'WELCOME_OFFER',
+      title: 'Hoş Geldiniz Teklifi',
+      messages: [
+        `Sayın ${salut}, ${biz} ailesine hoş geldiniz. İlk hizmet deneyiminizi özel kılmak istiyoruz. Yeni müşterilerimize sunduğumuz özel karşılama indiriminizden yararlanmak için randevunuzu bugün oluşturun.`,
+        `Sayın ${salut}, sizi ${biz} ailemizde görmekten mutluluk duyduk. İlk ziyaretinizi unutulmaz kılmak için size özel bir karşılama teklifi hazırladık; detaylar için lütfen bizi arayın.`,
+        `Sayın ${salut}, ${biz}'e hoş geldiniz. İlk randevunuzda en iyi hizmeti sunmak bizim önceliğimiz. Yeni üye indiriminizi kullanmak için bizi arayın ya da randevunuzu oluşturun.`,
+      ],
+      action: 'SEND_SMS',
+      urgency: 'MEDIUM',
+      discountSuggestion: '%15 ilk ziyaret indirimi',
+    },
+  };
+
+  const key = segment.key === 'LOST'    ? 'LOST'
+    : segment.key === 'NEW'             ? 'NEW'
+    : segment.key === 'AT_RISK'         ? 'AT_RISK'
+    : segment.key === 'VIP' && temperature.key === 'HOT'   ? 'VIP_HOT'
+    : segment.key === 'VIP'             ? 'VIP_WARM'
+    : segment.key === 'LOYAL' && temperature.key === 'HOT' ? 'LOYAL_HOT'
+    : segment.key === 'LOYAL'           ? 'LOYAL_WARM'
+    : segment.key === 'REGULAR'         ? 'REGULAR_HOT'
+    : 'OCCASIONAL';
+
+  const chosen = campaigns[key] || campaigns['OCCASIONAL'];
+  const { messages, ...rest } = chosen;
+  return { ...rest, message: pick(messages) };
+}
+
 /**
- * 💎 MÜŞTERİ SADAKAT RAPORU
- * 
- * Müşterilerin sadakat seviyelerini analiz eder:
- * - Müşteri Yaşam Boyu Değeri (LTV)
- * - Tekrar Gelme Oranı
- * - En Sadık Müşteriler
- * - Kayıp Müşteriler (Churn)
+ * 💎 MÜŞTERİ SADAKAT & SICAKLIK ANALİZİ
+ *
+ * Her müşteri için:
+ * - Sıcaklık: HOT / WARM / COLD / LOST
+ * - Segment:  VIP / LOYAL / REGULAR / AT_RISK / LOST / NEW
+ * - Kişiselleştirilmiş kampanya önerisi
+ * - En çok aldığı hizmet
  */
 export const getCustomerLoyaltyReport = async (req, res) => {
   try {
     const { accountId } = req.user;
-    const { minPurchases, sortBy = 'ltv' } = req.query;
+    const { minPurchases, sortBy = 'loyaltyScore', temperature, segment } = req.query;
 
-    console.log('💎 Müşteri Sadakat Raporu İsteği:');
-    console.log('- accountId:', accountId);
-
-    // Tüm müşterileri ve satışlarını çek
     const clients = await prisma.clients.findMany({
-      where: {
-        accountId: accountId,
-        isActive: true
-      },
+      where: { accountId, isActive: true },
       include: {
+        account: { select: { businessName: true } },
         sales: {
-          where: {
-            isDeleted: false
-          },
+          where: { isDeleted: false },
           include: {
-            payments: {
-              where: {
-                status: 'COMPLETED'
-              }
-            }
+            payments: { where: { status: 'COMPLETED' } },
+            service: { select: { id: true, serviceName: true } }
           },
-          orderBy: {
-            saleDate: 'asc'
-          }
+          orderBy: { saleDate: 'asc' }
         }
       }
     });
-
-    console.log('👥 Toplam aktif müşteri:', clients.length);
 
     const now = new Date();
     const loyaltyData = [];
 
     clients.forEach(client => {
-      // ✅ Satış yapmamış müşterileri de dahil et
       const purchaseCount = client.sales.length;
-      
-      // Toplam harcama (LTV) - Sadece COMPLETED ödemeler
+
+      // LTV — sadece COMPLETED ödemeler
       let totalSpent = 0;
       client.sales.forEach(sale => {
-        const paidForSale = sale.payments.reduce((sum, p) => {
-          const amount = parseFloat(p.amountPaid);
-          return sum + (isNaN(amount) ? 0 : amount);
-        }, 0);
-        totalSpent += paidForSale;
+        sale.payments.forEach(p => {
+          const a = parseFloat(p.amountPaid);
+          if (!isNaN(a)) totalSpent += a;
+        });
       });
 
-      // İlk ve son satış tarihi (satış yoksa müşteri oluşturma tarihini kullan)
-      const firstPurchaseDate = purchaseCount > 0 
-        ? new Date(client.sales[0].saleDate) 
-        : new Date(client.createdAt);
-      const lastPurchaseDate = purchaseCount > 0 
-        ? new Date(client.sales[client.sales.length - 1].saleDate)
-        : new Date(client.createdAt);
-      
-      // Müşteri yaşı (gün)
-      const customerAgeInDays = Math.floor((now - firstPurchaseDate) / (1000 * 60 * 60 * 24));
-      
-      // Son alışverişten bu yana geçen gün
-      const daysSinceLastPurchase = Math.floor((now - lastPurchaseDate) / (1000 * 60 * 60 * 24));
-      
-      // Ortalama sipariş değeri
-      const averageOrderValue = purchaseCount > 0 ? totalSpent / purchaseCount : 0;
-      
-      // Ortalama alışveriş sıklığı (gün)
-      const averagePurchaseFrequency = purchaseCount > 1 
-        ? customerAgeInDays / (purchaseCount - 1)
+      // En çok alınan hizmet
+      const serviceCount = {};
+      client.sales.forEach(sale => {
+        const svcName = sale.service?.serviceName;
+        if (svcName) serviceCount[svcName] = (serviceCount[svcName] || 0) + 1;
+      });
+      const favoriteService = Object.keys(serviceCount).sort((a, b) => serviceCount[b] - serviceCount[a])[0] || null;
+      const lastService = purchaseCount > 0
+        ? client.sales[client.sales.length - 1].service?.serviceName || null
         : null;
 
-      // Sadakat skoru hesapla (0-100)
+      // Tarihler
+      const firstDate = purchaseCount > 0
+        ? new Date(client.sales[0].saleDate)
+        : new Date(client.createdAt);
+      const lastDate = purchaseCount > 0
+        ? new Date(client.sales[client.sales.length - 1].saleDate)
+        : null;
+
+      const customerAgeInDays = Math.floor((now - firstDate) / 86400000);
+      const daysSinceLast = lastDate ? Math.floor((now - lastDate) / 86400000) : null;
+
+      const averageOrderValue = purchaseCount > 0 ? totalSpent / purchaseCount : 0;
+      const purchaseFrequencyDays = purchaseCount > 1
+        ? Math.round(customerAgeInDays / (purchaseCount - 1))
+        : null;
+
+      // Sadakat skoru (0–100)
       let loyaltyScore = 0;
-      
-      // 1. Satın alma sayısına göre puan (max 30)
-      loyaltyScore += Math.min(30, purchaseCount * 3);
-      
-      // 2. Toplam harcamaya göre puan (max 30)
-      loyaltyScore += Math.min(30, (totalSpent / 1000) * 2);
-      
-      // 3. Müşteri yaşına göre puan (max 20)
-      loyaltyScore += Math.min(20, (customerAgeInDays / 30) * 2);
-      
-      // 4. Yakın zamanlı aktiviteye göre puan (max 20)
-      if (daysSinceLastPurchase <= 30) {
-        loyaltyScore += 20;
-      } else if (daysSinceLastPurchase <= 60) {
-        loyaltyScore += 15;
-      } else if (daysSinceLastPurchase <= 90) {
-        loyaltyScore += 10;
-      } else if (daysSinceLastPurchase <= 180) {
-        loyaltyScore += 5;
+      loyaltyScore += Math.min(30, purchaseCount * 3);                          // Alışveriş sayısı
+      loyaltyScore += Math.min(30, (totalSpent / 1000) * 2);                   // Harcama
+      loyaltyScore += Math.min(20, (customerAgeInDays / 30) * 2);              // Müşteri yaşı
+      if (daysSinceLast !== null) {
+        if (daysSinceLast <= 30)       loyaltyScore += 20;
+        else if (daysSinceLast <= 60)  loyaltyScore += 15;
+        else if (daysSinceLast <= 90)  loyaltyScore += 10;
+        else if (daysSinceLast <= 180) loyaltyScore += 5;
       }
+      loyaltyScore = Math.min(100, loyaltyScore);
 
-      // Sadakat seviyesi
-      let loyaltyLevel = 'Yeni Müşteri';
-      if (loyaltyScore >= 80) loyaltyLevel = 'VIP';
-      else if (loyaltyScore >= 60) loyaltyLevel = 'Sadık';
-      else if (loyaltyScore >= 40) loyaltyLevel = 'Düzenli';
-      else if (loyaltyScore >= 20) loyaltyLevel = 'Aktif';
-
-      // Churn risk (kayıp riski)
-      let churnRisk = 'Düşük';
-      if (daysSinceLastPurchase > 180) churnRisk = 'Yüksek';
-      else if (daysSinceLastPurchase > 90) churnRisk = 'Orta';
+      const temp = getTemperature(purchaseCount, daysSinceLast ?? 9999);
+      const seg  = getSegment(loyaltyScore, purchaseCount, daysSinceLast ?? 9999);
+      const campaign = getCampaignRecommendation(seg, temp, client, favoriteService, averageOrderValue, client.account?.businessName);
 
       loyaltyData.push({
-        clientId: client.id,
+        clientId:   client.id,
         clientName: `${client.firstName} ${client.lastName}`,
-        phone: client.phone,
-        email: client.email,
-        purchaseCount: purchaseCount,
-        totalSpent: parseFloat(totalSpent.toFixed(2)),
-        averageOrderValue: parseFloat(averageOrderValue.toFixed(2)),
-        firstPurchaseDate: firstPurchaseDate.toISOString().split('T')[0],
-        lastPurchaseDate: purchaseCount > 0 ? lastPurchaseDate.toISOString().split('T')[0] : null,
-        customerAgeInDays: customerAgeInDays,
-        daysSinceLastPurchase: purchaseCount > 0 ? daysSinceLastPurchase : null,
-        averagePurchaseFrequency: averagePurchaseFrequency ? parseFloat(averagePurchaseFrequency.toFixed(1)) : null,
-        loyaltyScore: parseFloat(loyaltyScore.toFixed(1)),
-        loyaltyLevel: loyaltyLevel,
-        churnRisk: churnRisk,
-        hasNoSales: purchaseCount === 0 // ✅ Satış yapmamış müşteri işareti
+        firstName:  client.firstName,
+        phone:      client.phone,
+        email:      client.email,
+        gender:     client.gender,
+        marketingConsent: client.marketingConsent,
+        consentDate: client.consentDate ? client.consentDate.toISOString().split('T')[0] : null,
+
+        // Isı & segment
+        temperature:      temp,
+        segment:          seg,
+        loyaltyScore:     parseFloat(loyaltyScore.toFixed(1)),
+
+        // Satın alma metrikleri
+        purchaseCount,
+        totalSpent:              parseFloat(totalSpent.toFixed(2)),
+        averageOrderValue:       parseFloat(averageOrderValue.toFixed(2)),
+        purchaseFrequencyDays,   // kaç günde bir geliyor (null = tek alışveriş)
+
+        // Servis bilgisi
+        favoriteService,
+        lastService,
+
+        // Tarihler
+        firstPurchaseDate: firstDate.toISOString().split('T')[0],
+        lastPurchaseDate:  lastDate ? lastDate.toISOString().split('T')[0] : null,
+        daysSinceLastPurchase: daysSinceLast,
+        customerAgeInDays,
+
+        // Kampanya önerisi
+        campaign,
+
+        hasNoSales: purchaseCount === 0
       });
     });
 
-    // Filtreleme (minPurchases varsa)
-    let filteredData = loyaltyData;
-    if (minPurchases) {
-      filteredData = loyaltyData.filter(c => c.purchaseCount >= parseInt(minPurchases));
-    }
+    // Filtrele
+    let result = loyaltyData;
+    if (minPurchases) result = result.filter(c => c.purchaseCount >= parseInt(minPurchases));
+    if (temperature)  result = result.filter(c => c.temperature.key === temperature.toUpperCase());
+    if (segment)      result = result.filter(c => c.segment.key === segment.toUpperCase());
 
-    // Sıralama
-    switch (sortBy) {
-      case 'ltv':
-        filteredData.sort((a, b) => b.totalSpent - a.totalSpent);
-        break;
-      case 'purchases':
-        filteredData.sort((a, b) => b.purchaseCount - a.purchaseCount);
-        break;
-      case 'loyalty_score':
-        filteredData.sort((a, b) => b.loyaltyScore - a.loyaltyScore);
-        break;
-      case 'last_purchase':
-        filteredData.sort((a, b) => a.daysSinceLastPurchase - b.daysSinceLastPurchase);
-        break;
-      default:
-        filteredData.sort((a, b) => b.totalSpent - a.totalSpent);
-    }
-
-    // Özet istatistikler
-    const totalLTV = filteredData.reduce((sum, c) => sum + c.totalSpent, 0);
-    const averageLTV = filteredData.length > 0 ? totalLTV / filteredData.length : 0;
-    const totalPurchases = filteredData.reduce((sum, c) => sum + c.purchaseCount, 0);
-    const averagePurchases = filteredData.length > 0 ? totalPurchases / filteredData.length : 0;
-
-    // Seviye bazında grupla
-    const byLevel = {
-      VIP: filteredData.filter(c => c.loyaltyLevel === 'VIP').length,
-      Sadık: filteredData.filter(c => c.loyaltyLevel === 'Sadık').length,
-      Düzenli: filteredData.filter(c => c.loyaltyLevel === 'Düzenli').length,
-      Aktif: filteredData.filter(c => c.loyaltyLevel === 'Aktif').length,
-      'Yeni Müşteri': filteredData.filter(c => c.loyaltyLevel === 'Yeni Müşteri').length
+    // Sırala
+    const sorters = {
+      loyaltyScore:  (a, b) => b.loyaltyScore - a.loyaltyScore,
+      ltv:           (a, b) => b.totalSpent - a.totalSpent,
+      purchases:     (a, b) => b.purchaseCount - a.purchaseCount,
+      last_purchase: (a, b) => (a.daysSinceLastPurchase ?? 9999) - (b.daysSinceLastPurchase ?? 9999),
+      urgency:       (a, b) => b.segment.priority - a.segment.priority
     };
+    result.sort(sorters[sortBy] || sorters.loyaltyScore);
 
-    // Churn risk bazında grupla
-    const byChurnRisk = {
-      Yüksek: filteredData.filter(c => c.churnRisk === 'Yüksek').length,
-      Orta: filteredData.filter(c => c.churnRisk === 'Orta').length,
-      Düşük: filteredData.filter(c => c.churnRisk === 'Düşük').length
+    // Segment bazında sayılar (tüm müşteriler için)
+    const byTemperature = { HOT: 0, WARM: 0, COLD: 0, LOST: 0 };
+    const bySegment     = { VIP: 0, LOYAL: 0, REGULAR: 0, OCCASIONAL: 0, AT_RISK: 0, LOST: 0, NEW: 0 };
+    loyaltyData.forEach(c => {
+      byTemperature[c.temperature.key] = (byTemperature[c.temperature.key] || 0) + 1;
+      bySegment[c.segment.key]         = (bySegment[c.segment.key] || 0) + 1;
+    });
+
+    const totalLTV = result.reduce((s, c) => s + c.totalSpent, 0);
+
+    // Kampanya öncelik listesi — sadece pazarlama onayı verilmiş müşteriler
+    const campaignList = [...loyaltyData]
+      .filter(c => c.marketingConsent === true)
+      .sort((a, b) => b.segment.priority - a.segment.priority || (a.daysSinceLastPurchase ?? 0) - (b.daysSinceLastPurchase ?? 0))
+      .slice(0, 50)
+      .map(c => ({
+        clientId:    c.clientId,
+        clientName:  c.clientName,
+        phone:       c.phone,
+        consentDate: c.consentDate,
+        temperature: c.temperature,
+        segment:     c.segment,
+        campaign:    c.campaign,
+        daysSinceLastPurchase: c.daysSinceLastPurchase,
+        favoriteService: c.favoriteService
+      }));
+
+    // Consent istatistikleri
+    const consentStats = {
+      total: loyaltyData.length,
+      consented: loyaltyData.filter(c => c.marketingConsent).length,
+      notConsented: loyaltyData.filter(c => !c.marketingConsent).length
     };
-
-    // ✅ Satış yapmamış müşteri sayısı
-    const customersWithNoSales = loyaltyData.filter(c => c.purchaseCount === 0).length;
-    const customersWithSales = loyaltyData.filter(c => c.purchaseCount > 0).length;
 
     res.json({
       success: true,
-      data: filteredData,
+      data: result,
+      campaigns: campaignList,
       summary: {
-        totalCustomers: clients.length, // ✅ TÜM aktif müşteriler (259)
-        totalActiveCustomers: filteredData.length, // Raporda gösterilen müşteriler
-        customersWithSales: customersWithSales, // Satış yapmış müşteriler
-        customersWithNoSales: customersWithNoSales, // Satış yapmamış müşteriler
-        totalLTV: parseFloat(totalLTV.toFixed(2)),
-        averageLTV: parseFloat(averageLTV.toFixed(2)),
-        totalPurchases: totalPurchases,
-        averagePurchases: parseFloat(averagePurchases.toFixed(1)),
-        byLoyaltyLevel: byLevel,
-        byChurnRisk: byChurnRisk,
-        topCustomer: filteredData.length > 0 ? filteredData[0].clientName : null
+        totalCustomers:    clients.length,
+        filteredCount:     result.length,
+        customersWithSales:   loyaltyData.filter(c => !c.hasNoSales).length,
+        customersWithNoSales: loyaltyData.filter(c => c.hasNoSales).length,
+        totalLTV:   parseFloat(totalLTV.toFixed(2)),
+        averageLTV: result.length > 0 ? parseFloat((totalLTV / result.length).toFixed(2)) : 0,
+        byTemperature,
+        bySegment,
+        consentStats,
+        topCustomer: result.length > 0 ? result[0].clientName : null
       },
       meta: {
-        sortedBy: sortBy,
-        minPurchases: minPurchases ? parseInt(minPurchases) : null
+        sortedBy:   sortBy,
+        filterTemperature: temperature || null,
+        filterSegment:     segment || null,
+        minPurchases:      minPurchases ? parseInt(minPurchases) : null
       }
     });
 
   } catch (error) {
-    console.error('❌ Müşteri sadakat raporu hatası:', error);
+    console.error('❌ Müşteri analiz raporu hatası:', error);
     res.status(500).json({
       success: false,
-      message: 'Müşteri sadakat raporu alınamadı',
+      message: 'Müşteri analiz raporu alınamadı',
       error: error.message
     });
   }

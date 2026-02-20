@@ -466,71 +466,62 @@ export const getServiceSalesReport = async (req, res) => {
 
     // Hizmet bazlı gruplama ve hesaplama
     const serviceStats = {};
-    let totalPaidAmount = 0;
+    let totalCashReceived = 0; // Kasaya giren gerçek para (COMPLETED ödemeler)
     let totalCount = 0;
-    let totalRevenue = 0;
+    let totalInvoiced = 0;     // Fatura tutarı (ödenmemiş borçlar dahil)
 
-    // 1. Önce satışları işle (totalRevenue için)
+    // 1. Önce satışları işle (fatura tutarı için)
     sales.forEach(sale => {
       const serviceId = sale.serviceId;
       const serviceName = sale.service.serviceName;
       const saleAmount = parseFloat(sale.totalAmount);
       
-      // Hizmet istatistiklerini başlat
       if (!serviceStats[serviceId]) {
         serviceStats[serviceId] = {
           serviceId: serviceId,
           serviceName: serviceName,
           count: 0,
-          revenue: 0,
-          paidAmount: 0
+          invoicedAmount: 0,  // Fatura tutarı (ödenmemiş dahil)
+          paidAmount: 0       // Kasaya giren (sadece COMPLETED ödemeler)
         };
       }
 
-      // Satış bilgilerini ekle
       serviceStats[serviceId].count += 1;
-      serviceStats[serviceId].revenue += saleAmount;
+      serviceStats[serviceId].invoicedAmount += saleAmount;
 
-      // Genel toplamları güncelle
-      totalRevenue += saleAmount;
+      totalInvoiced += saleAmount;
       totalCount += 1;
     });
 
-    // 2. Sonra ödemeleri işle (paidAmount için)
+    // 2. Ödemeleri işle — sadece COMPLETED (kasaya giren gerçek para)
     payments.forEach(payment => {
       const sale = payment.sale;
       const serviceId = sale.serviceId;
       const paidAmount = parseFloat(payment.amountPaid);
       
-      // Eğer bu hizmet satışlarda yoksa (farklı tarih aralığında satılmış olabilir)
       if (!serviceStats[serviceId]) {
         serviceStats[serviceId] = {
           serviceId: serviceId,
           serviceName: sale.service.serviceName,
           count: 0,
-          revenue: 0,
+          invoicedAmount: 0,
           paidAmount: 0
         };
       }
 
-      // Ödeme bilgilerini ekle
       serviceStats[serviceId].paidAmount += paidAmount;
-
-      // Genel toplam ödemeyi güncelle
-      totalPaidAmount += paidAmount;
+      totalCashReceived += paidAmount;
     });
 
-    // Sonuçları array'e çevir ve sırala
-    const servicesArray = Object.values(serviceStats).sort((a, b) => b.revenue - a.revenue);
+    // Sonuçları array'e çevir ve sırala (en çok tahsilat yapılan önce)
+    const servicesArray = Object.values(serviceStats).sort((a, b) => b.paidAmount - a.paidAmount);
 
-    // Kalan borcu hesapla - sadece satış yapılan hizmetler için
+    // Alacak (borç) hesapla = fatura - ödenen
     let remainingDebt = 0;
     servicesArray.forEach(service => {
-      if (service.revenue > 0) { // Sadece satış yapılan hizmetler
-        const serviceDebt = service.revenue - service.paidAmount;
-        if (serviceDebt > 0) { // Sadece pozitif borçları topla
-          remainingDebt += serviceDebt;
-        }
+      if (service.invoicedAmount > 0) {
+        const debt = service.invoicedAmount - service.paidAmount;
+        if (debt > 0) remainingDebt += debt;
       }
     });
 
@@ -539,8 +530,11 @@ export const getServiceSalesReport = async (req, res) => {
       data: {
         services: servicesArray,
         summary: {
-          totalRevenue: parseFloat(totalRevenue.toFixed(2)),
-          totalPaidAmount: parseFloat(totalPaidAmount.toFixed(2)),
+          totalInvoiced: parseFloat(totalInvoiced.toFixed(2)),       // Fatura tutarı
+          totalCashReceived: parseFloat(totalCashReceived.toFixed(2)), // Kasaya giren
+          // Geriye dönük uyumluluk için eski alan adları da gönder
+          totalRevenue: parseFloat(totalInvoiced.toFixed(2)),
+          totalPaidAmount: parseFloat(totalCashReceived.toFixed(2)),
           totalCount: totalCount,
           remainingDebt: parseFloat(remainingDebt.toFixed(2))
         },

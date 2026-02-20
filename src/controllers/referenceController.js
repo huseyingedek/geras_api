@@ -42,9 +42,14 @@ export const getReferenceById = async (req, res) => {
     const { accountId } = req.user;
     const { id } = req.params;
 
+    const parsedId = parseInt(id);
+    if (!id || isNaN(parsedId)) {
+      return res.status(400).json({ success: false, message: 'Geçersiz referans ID' });
+    }
+
     const reference = await prisma.reference_sources.findFirst({
       where: {
-        id: parseInt(id),
+        id: parsedId,
         accountid: accountId
       },
       include: {
@@ -130,9 +135,14 @@ export const updateReference = async (req, res) => {
     const { id } = req.params;
     const { reference_type, reference_name, notes } = req.body;
 
+    const parsedId = parseInt(id);
+    if (!id || isNaN(parsedId)) {
+      return res.status(400).json({ success: false, message: 'Geçersiz referans ID' });
+    }
+
     const reference = await prisma.reference_sources.findFirst({
       where: {
-        id: parseInt(id),
+        id: parsedId,
         accountid: accountId
       }
     });
@@ -146,7 +156,7 @@ export const updateReference = async (req, res) => {
 
     const updatedReference = await prisma.reference_sources.update({
       where: {
-        id: parseInt(id)
+        id: parsedId
       },
       data: {
         ...(reference_type && { reference_type: reference_type }),
@@ -177,9 +187,14 @@ export const deleteReference = async (req, res) => {
     const { accountId } = req.user;
     const { id } = req.params;
 
+    const parsedId = parseInt(id);
+    if (!id || isNaN(parsedId)) {
+      return res.status(400).json({ success: false, message: 'Geçersiz referans ID' });
+    }
+
     const reference = await prisma.reference_sources.findFirst({
       where: {
-        id: parseInt(id),
+        id: parsedId,
         accountid: accountId
       }
     });
@@ -194,7 +209,7 @@ export const deleteReference = async (req, res) => {
     // Bu referansa bağlı satış var mı kontrol et
     const salesCount = await prisma.sales.count({
       where: {
-        reference_id: parseInt(id)
+        reference_id: parsedId
       }
     });
 
@@ -207,7 +222,7 @@ export const deleteReference = async (req, res) => {
 
     await prisma.reference_sources.delete({
       where: {
-        id: parseInt(id)
+        id: parsedId
       }
     });
 
@@ -389,104 +404,111 @@ export const getReferencePerformanceReport = async (req, res) => {
       }
     }
 
-    // 1. Referanslı satışları çek
-    const sales = await prisma.sales.findMany({
+    // Gelir-Gider raporuyla aynı mantık: ÖDEME TARİHİNE göre filtrele
+    // Tüm ödemeleri çekip JS tarafında referanslı/referanssız ayır
+    const allPayments = await prisma.payments.findMany({
       where: {
-        accountId: accountId,
-        isDeleted: false,
-        reference_id: { not: null },
-        ...(Object.keys(dateFilter).length > 0 && { saleDate: dateFilter })
+        status: 'COMPLETED',
+        ...(Object.keys(dateFilter).length > 0 && { paymentDate: dateFilter }),
+        sale: {
+          accountId: accountId,
+          isDeleted: false
+        }
       },
       include: {
-        reference_sources: {
+        sale: {
           select: {
             id: true,
-            reference_type: true,
-            reference_name: true
-          }
-        },
-        payments: {
-          where: {
-            status: 'COMPLETED'
+            reference_id: true,
+            reference_sources: {
+              select: { id: true, reference_type: true, reference_name: true }
+            }
           }
         }
       }
     });
 
-    console.log('📊 Referanslı satış sayısı:', sales.length);
+    console.log('📊 Toplam COMPLETED ödeme sayısı (dönem):', allPayments.length);
 
-    // 2. Referans kaynaklarına göre grupla
+    // JS tarafında ayır
     const referenceStats = {};
-    let totalRevenue = 0;
     let totalPaid = 0;
+    let noRefPaid = 0;
+    let noRefPaymentCount = 0;
 
-    sales.forEach(sale => {
+    allPayments.forEach(payment => {
+      const sale = payment.sale;
+      const paidAmount = parseFloat(payment.amountPaid);
       const refId = sale.reference_id;
+
+      if (!refId) {
+        // Referanssız
+        noRefPaid += paidAmount;
+        noRefPaymentCount++;
+        return;
+      }
+
+      // Referanslı
       const ref = sale.reference_sources;
-      const saleAmount = parseFloat(sale.totalAmount);
-      
-      // Bu referans için ödenen tutar
-      const paidForSale = sale.payments.reduce((sum, p) => sum + parseFloat(p.amountPaid), 0);
-      
       if (!referenceStats[refId]) {
         referenceStats[refId] = {
           referenceId: refId,
           referenceName: ref?.reference_name || 'Bilinmiyor',
           referenceType: ref?.reference_type || 'unknown',
-          customerCount: 0,
-          totalRevenue: 0,
+          paymentCount: 0,
+          saleCount: 0,
           totalPaid: 0,
-          averageOrderValue: 0
+          _saleIds: new Set()
         };
       }
 
-      referenceStats[refId].customerCount += 1;
-      referenceStats[refId].totalRevenue += saleAmount;
-      referenceStats[refId].totalPaid += paidForSale;
-      
-      totalRevenue += saleAmount;
-      totalPaid += paidForSale;
+      referenceStats[refId].paymentCount++;
+      referenceStats[refId]._saleIds.add(sale.id); // tekrar sayımı önle
+      referenceStats[refId].totalPaid += paidAmount;
+      totalPaid += paidAmount;
     });
 
-    // Ortalama sipariş değerini hesapla
+    // saleCount ve averageOrderValue hesapla, _saleIds temizle
     Object.values(referenceStats).forEach(ref => {
-      ref.averageOrderValue = ref.customerCount > 0 
-        ? ref.totalRevenue / ref.customerCount 
+      ref.saleCount = ref._saleIds.size;
+      ref.averageOrderValue = ref.saleCount > 0
+        ? parseFloat((ref.totalPaid / ref.saleCount).toFixed(2))
         : 0;
+      ref.totalPaid = parseFloat(ref.totalPaid.toFixed(2));
+      delete ref._saleIds;
     });
 
-    // Array'e çevir ve sırala (en çok gelir getiren önce)
-    const result = Object.values(referenceStats).sort((a, b) => b.totalRevenue - a.totalRevenue);
+    const result = Object.values(referenceStats).sort((a, b) => b.totalPaid - a.totalPaid);
+    const grandTotalPaid = totalPaid + noRefPaid;
 
-    // Yüzde hesapla
     const resultWithPercentages = result.map(ref => ({
       ...ref,
-      revenuePercentage: totalRevenue > 0 ? (ref.totalRevenue / totalRevenue) * 100 : 0,
-      customerPercentage: sales.length > 0 ? (ref.customerCount / sales.length) * 100 : 0,
-      totalRevenue: parseFloat(ref.totalRevenue.toFixed(2)),
-      totalPaid: parseFloat(ref.totalPaid.toFixed(2)),
-      averageOrderValue: parseFloat(ref.averageOrderValue.toFixed(2))
+      revenuePercentage: grandTotalPaid > 0
+        ? parseFloat(((ref.totalPaid / grandTotalPaid) * 100).toFixed(2))
+        : 0
     }));
 
-    // Referansı olmayan satışlar
-    const salesWithoutReference = await prisma.sales.count({
-      where: {
-        accountId: accountId,
-        isDeleted: false,
-        reference_id: null,
-        ...(Object.keys(dateFilter).length > 0 && { saleDate: dateFilter })
-      }
-    });
+    console.log('📊 Referanslı toplam:', totalPaid.toFixed(2));
+    console.log('📊 Referanssız toplam:', noRefPaid.toFixed(2));
+    console.log('📊 Grand total:', grandTotalPaid.toFixed(2));
 
     res.json({
       success: true,
       data: resultWithPercentages,
       summary: {
         totalReferences: result.length,
-        totalCustomers: sales.length,
-        totalRevenue: parseFloat(totalRevenue.toFixed(2)),
-        totalPaid: parseFloat(totalPaid.toFixed(2)),
-        customersWithoutReference: salesWithoutReference,
+
+        // Referanslı ödemeler
+        referralPaymentCount: allPayments.length - noRefPaymentCount,
+        referralTotalPaid: parseFloat(totalPaid.toFixed(2)),
+
+        // Referanssız ödemeler
+        noReferencePaymentCount: noRefPaymentCount,
+        noReferenceTotalPaid: parseFloat(noRefPaid.toFixed(2)),
+
+        // Genel toplam — gelir-gider raporundaki totalIncome ile eşleşir
+        grandTotalPaid: parseFloat(grandTotalPaid.toFixed(2)),
+
         topReference: result.length > 0 ? result[0].referenceName : null
       },
       period: {
