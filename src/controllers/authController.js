@@ -512,9 +512,9 @@ const createDemoAccount = async (req, res, next) => {
       await sendDemoAccountNotification({
         accountId:     result.account.id,
         businessName:  result.account.businessName,
-        contactPerson: result.account.contactPerson,
-        phone:         result.account.phone,
-        email:         result.account.email,
+        contactPerson: ownerUsername,   // Kaydolan kişinin adı
+        phone:         ownerPhone,      // Kaydolan kişinin doğrulanmış telefonu
+        email:         ownerEmail,      // Kaydolan kişinin e-postası
         demoExpiresAt: result.account.demoExpiresAt
       });
       console.log('✅ Admin bildirim SMS gönderildi');
