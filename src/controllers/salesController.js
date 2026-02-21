@@ -1,5 +1,24 @@
 import prisma from '../lib/prisma.js';
 import AppError from '../utils/AppError.js';
+import { sendSMS } from '../utils/smsService.js';
+
+/**
+ * Tarih parse helper: "YYYY-MM-DD" gibi sadece tarih geldiğinde
+ * new Date() midnight UTC üretir → Türkiye saatinde 03:00 görünür.
+ * Çözüm: sadece tarih varsa o günün şu anki saatini kullan;
+ * datetime string ise olduğu gibi parse et.
+ */
+const parseLocalDate = (dateStr) => {
+  if (!dateStr) return new Date();
+  // ISO datetime (T içeriyorsa) veya zaman bilgisi varsa direkt parse et
+  if (dateStr.includes('T') || dateStr.includes(' ')) {
+    return new Date(dateStr);
+  }
+  // Sadece "YYYY-MM-DD" → o günün şu anki saatiyle birleştir (UTC kayması olmaz)
+  const now = new Date();
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day, now.getHours(), now.getMinutes(), now.getSeconds(), 0);
+};
 
 const calculatePrice = (service, quantity) => {
   const calculatedPrice = service.price * quantity;
@@ -910,19 +929,36 @@ export const getSaleById = async (req, res) => {
       });
     }
 
-    const totalPaid = sale.payments
-      .filter(payment => payment.status === 'COMPLETED')
-      .reduce((sum, payment) => sum + parseFloat(payment.amountPaid), 0);
-    const remainingPayment = parseFloat(sale.totalAmount) - totalPaid;
+    const saleTotal = parseFloat(sale.totalAmount);
+
+    const completedAmount = sale.payments
+      .filter(p => p.status === 'COMPLETED')
+      .reduce((sum, p) => sum + parseFloat(p.amountPaid), 0);
+
+    const pendingAmount = sale.payments
+      .filter(p => p.status === 'PENDING')
+      .reduce((sum, p) => sum + parseFloat(p.amountPaid), 0);
+
+    const pendingInstallmentAmount = sale.payments
+      .filter(p => p.status === 'PENDING' && p.installmentNumber !== null)
+      .reduce((sum, p) => sum + parseFloat(p.amountPaid), 0);
+
+    const remainingDebt = Math.max(0, saleTotal - completedAmount);
 
     res.json({
       success: true,
       data: {
         ...sale,
         paymentStatus: {
-          totalPaid: totalPaid.toFixed(2),
-          remainingPayment: remainingPayment.toFixed(2),
-          isPaid: remainingPayment <= 0
+          totalAmount: saleTotal.toFixed(2),
+          completedAmount: completedAmount.toFixed(2),
+          pendingAmount: pendingAmount.toFixed(2),
+          pendingInstallmentAmount: pendingInstallmentAmount.toFixed(2),
+          remainingDebt: remainingDebt.toFixed(2),
+          isPaid: remainingDebt <= 0,
+          // Eski alan adları (geriye dönük uyumluluk)
+          totalPaid: completedAmount.toFixed(2),
+          remainingPayment: remainingDebt.toFixed(2)
         }
       }
     });
@@ -1160,9 +1196,10 @@ export const getSalePayments = async (req, res) => {
       },
       include: {
         payments: {
-          orderBy: {
-            paymentDate: 'desc'
-          }
+          orderBy: [
+            { installmentNumber: 'asc' },
+            { paymentDate: 'desc' }
+          ]
         }
       }
     });
@@ -1174,9 +1211,30 @@ export const getSalePayments = async (req, res) => {
       });
     }
 
+    const saleTotal = parseFloat(sale.totalAmount);
+
+    const completedAmount = sale.payments
+      .filter(p => p.status === 'COMPLETED')
+      .reduce((sum, p) => sum + parseFloat(p.amountPaid), 0);
+
+    const pendingAmount = sale.payments
+      .filter(p => p.status === 'PENDING')
+      .reduce((sum, p) => sum + parseFloat(p.amountPaid), 0);
+
+    const remainingDebt = Math.max(0, saleTotal - completedAmount);
+
     res.json({
       success: true,
-      data: sale.payments
+      data: sale.payments,
+      summary: {
+        totalAmount: saleTotal.toFixed(2),
+        completedAmount: completedAmount.toFixed(2),
+        pendingAmount: pendingAmount.toFixed(2),
+        remainingDebt: remainingDebt.toFixed(2),
+        isPaid: remainingDebt <= 0,
+        isInstallment: sale.isInstallment,
+        smsReminderEnabled: sale.smsReminderEnabled
+      }
     });
   } catch (error) {
     console.error('Ödemeler getirme hatası:', error);
@@ -1228,8 +1286,8 @@ export const addPaymentToSale = async (req, res) => {
       });
     }
 
-    // Ödeme tarihi - frontend'den gelen tarihi kullan veya şu anki zamanı al
-    const finalPaymentDate = paymentDate ? new Date(paymentDate) : new Date();
+    // Ödeme tarihi - sadece tarih gelirse (YYYY-MM-DD) gece yarısı UTC olmaz
+    const finalPaymentDate = parseLocalDate(paymentDate);
 
     const payment = await prisma.payments.create({
       data: {
@@ -1780,9 +1838,9 @@ export const updatePaymentStatus = async (req, res) => {
       updatedAt: new Date()
     };
 
-    // Eğer paymentDate verilmişse güncelle
+    // Eğer paymentDate verilmişse güncelle (sadece tarih gelirse UTC kayması olmaz)
     if (paymentDate) {
-      updateData.paymentDate = new Date(paymentDate);
+      updateData.paymentDate = parseLocalDate(paymentDate);
     }
 
     // Ödeme durumunu güncelle
@@ -1867,4 +1925,412 @@ export const getPaymentById = async (req, res) => {
       error: error.message
     });
   }
-}; 
+};
+
+// ──────────────────────────────────────────────
+//  TAKSİT SİSTEMİ
+// ──────────────────────────────────────────────
+
+/**
+ * POST /api/sales/:id/installments
+ * Bir satış için taksit planı oluşturur.
+ * Body: { installments: [{amount, dueDate}, ...], smsReminderEnabled: true/false }
+ * Validasyon: taksit tutarları toplamı ≤ sale.totalAmount
+ */
+export const createInstallmentPlan = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const { id } = req.params;
+    const { installments, smsReminderEnabled = true } = req.body;
+
+    if (!Array.isArray(installments) || installments.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'En az 1 taksit belirtilmelidir'
+      });
+    }
+
+    // Satışı doğrula
+    const sale = await prisma.sales.findFirst({
+      where: { id: parseInt(id), accountId, isDeleted: false },
+      include: {
+        client: { select: { firstName: true, lastName: true, phone: true, gender: true } },
+        service: { select: { serviceName: true } },
+        payments: true
+      }
+    });
+
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Satış bulunamadı' });
+    }
+
+    // Zaten taksit planı var mı?
+    if (sale.isInstallment && sale.payments.some(p => p.installmentNumber !== null)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Bu satış için zaten taksit planı mevcut. Mevcut taksitleri güncelleyin.'
+      });
+    }
+
+    // Taksit tutarlarını doğrula
+    for (let i = 0; i < installments.length; i++) {
+      const inst = installments[i];
+      if (!inst.amount || parseFloat(inst.amount) <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: `${i + 1}. taksit tutarı geçersiz`
+        });
+      }
+      if (!inst.dueDate) {
+        return res.status(400).json({
+          success: false,
+          message: `${i + 1}. taksit için vade tarihi zorunludur`
+        });
+      }
+    }
+
+    const totalInstallmentAmount = installments.reduce(
+      (sum, inst) => sum + parseFloat(inst.amount), 0
+    );
+    const saleTotal = parseFloat(sale.totalAmount);
+
+    if (Math.round(totalInstallmentAmount * 100) > Math.round(saleTotal * 100)) {
+      return res.status(400).json({
+        success: false,
+        message: `Taksit toplamı (${totalInstallmentAmount.toFixed(2)} ₺) satış tutarından (${saleTotal.toFixed(2)} ₺) fazla olamaz`
+      });
+    }
+
+    // Varsa mevcut ödemeleri sil, yeni taksit planı oluştur (transaction)
+    const result = await prisma.$transaction(async (tx) => {
+      // Önceki PENDING taksitleri sil
+      await tx.payments.deleteMany({
+        where: { saleId: parseInt(id), status: 'PENDING', installmentNumber: { not: null } }
+      });
+
+      // Satışı taksitli olarak güncelle
+      await tx.sales.update({
+        where: { id: parseInt(id) },
+        data: {
+          isInstallment: true,
+          installmentCount: installments.length,
+          smsReminderEnabled: Boolean(smsReminderEnabled)
+        }
+      });
+
+      // Taksitleri oluştur
+      const createdPayments = [];
+      for (let i = 0; i < installments.length; i++) {
+        const inst = installments[i];
+        const parsedDueDate = parseLocalDate(inst.dueDate);
+        const payment = await tx.payments.create({
+          data: {
+            saleId: parseInt(id),
+            amountPaid: parseFloat(inst.amount),
+            paymentMethod: inst.paymentMethod || 'CASH',
+            status: 'PENDING',
+            dueDate: parsedDueDate,
+            installmentNumber: i + 1,
+            notes: inst.notes || null,
+            paymentDate: parsedDueDate
+          }
+        });
+        createdPayments.push(payment);
+      }
+
+      return createdPayments;
+    });
+
+    // SMS bilgilendirmesi: taksit planı oluşturulduğunda müşteriye bilgi gönder (opsiyonel)
+    let smsSent = false;
+    if (smsReminderEnabled && sale.client.phone) {
+      try {
+        const clientName = `${sale.client.firstName} ${sale.client.lastName}`;
+        const serviceName = sale.service.serviceName;
+        const installmentLines = result
+          .map(p => `  ${p.installmentNumber}. Taksit: ${parseFloat(p.amountPaid).toFixed(2)} TL — Vade: ${new Date(p.dueDate).toLocaleDateString('tr-TR')}`)
+          .join('\n');
+
+        const message =
+          `Sayin ${clientName},\n` +
+          `${serviceName} icin ${installments.length} taksitli odeme planınız olusturulmustur.\n\n` +
+          `${installmentLines}\n\n` +
+          `Toplam: ${totalInstallmentAmount.toFixed(2)} TL\n` +
+          `GERAS Salon Sistemi`;
+
+        const smsResult = await sendSMS(sale.client.phone, message);
+        smsSent = smsResult?.success === true;
+      } catch (smsErr) {
+        console.error('Taksit planı SMS gönderilemedi:', smsErr.message);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Taksit planı başarıyla oluşturuldu',
+      data: {
+        saleId: parseInt(id),
+        installmentCount: installments.length,
+        totalAmount: totalInstallmentAmount,
+        smsReminderEnabled: Boolean(smsReminderEnabled),
+        smsSent,
+        installments: result
+      }
+    });
+  } catch (error) {
+    console.error('Taksit planı oluşturma hatası:', error);
+    res.status(500).json({ success: false, message: 'Taksit planı oluşturulamadı', error: error.message });
+  }
+};
+
+/**
+ * PATCH /api/sales/payments/:paymentId/installment
+ * Bekleyen bir taksitin tutarını ve/veya vade tarihini günceller.
+ * Body: { amount, dueDate, notes }
+ * Validasyon: toplam taksit tutarı satış tutarını geçemez
+ */
+export const updateInstallment = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const { paymentId } = req.params;
+    const { amount, dueDate, notes } = req.body;
+
+    if (!amount && !dueDate && notes === undefined) {
+      return res.status(400).json({ success: false, message: 'Güncellenecek alan belirtilmedi (amount, dueDate, notes)' });
+    }
+
+    const payment = await prisma.payments.findFirst({
+      where: {
+        id: parseInt(paymentId),
+        installmentNumber: { not: null },
+        sale: { accountId, isDeleted: false }
+      },
+      include: {
+        sale: {
+          include: {
+            payments: { where: { installmentNumber: { not: null } } }
+          }
+        }
+      }
+    });
+
+    if (!payment) {
+      return res.status(404).json({ success: false, message: 'Taksit bulunamadı' });
+    }
+
+    if (payment.status !== 'PENDING') {
+      return res.status(400).json({
+        success: false,
+        message: 'Sadece bekleyen (PENDING) taksitler güncellenebilir'
+      });
+    }
+
+    // Tutar değişiyorsa toplam kontrol et
+    if (amount !== undefined) {
+      const newAmount = parseFloat(amount);
+      if (newAmount <= 0) {
+        return res.status(400).json({ success: false, message: 'Taksit tutarı 0\'dan büyük olmalıdır' });
+      }
+
+      const otherInstallmentsTotal = payment.sale.payments
+        .filter(p => p.id !== payment.id)
+        .reduce((sum, p) => sum + parseFloat(p.amountPaid), 0);
+
+      const saleTotal = parseFloat(payment.sale.totalAmount);
+
+      if (Math.round((otherInstallmentsTotal + newAmount) * 100) > Math.round(saleTotal * 100)) {
+        const maxAllowed = (saleTotal - otherInstallmentsTotal).toFixed(2);
+        return res.status(400).json({
+          success: false,
+          message: `Bu taksit için maksimum tutar: ${maxAllowed} ₺ (Satış toplam: ${saleTotal.toFixed(2)} ₺)`
+        });
+      }
+    }
+
+    const updateData = {};
+    if (amount !== undefined) {
+      updateData.amountPaid = parseFloat(amount);
+      updateData.paymentDate = dueDate ? parseLocalDate(dueDate) : payment.dueDate;
+    }
+    if (dueDate !== undefined) {
+      updateData.dueDate = parseLocalDate(dueDate);
+      if (!amount) updateData.paymentDate = parseLocalDate(dueDate);
+    }
+    if (notes !== undefined) updateData.notes = notes;
+
+    const updated = await prisma.payments.update({
+      where: { id: parseInt(paymentId) },
+      data: updateData
+    });
+
+    res.json({
+      success: true,
+      message: 'Taksit güncellendi',
+      data: updated
+    });
+  } catch (error) {
+    console.error('Taksit güncelleme hatası:', error);
+    res.status(500).json({ success: false, message: 'Taksit güncellenemedi', error: error.message });
+  }
+};
+
+/**
+ * PATCH /api/sales/:id/sms-reminder
+ * Satış için SMS hatırlatma ayarını aç/kapat.
+ * Body: { smsReminderEnabled: true/false }
+ */
+export const toggleInstallmentSmsReminder = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const { id } = req.params;
+    const { smsReminderEnabled } = req.body;
+
+    if (typeof smsReminderEnabled !== 'boolean' && smsReminderEnabled !== 'true' && smsReminderEnabled !== 'false') {
+      return res.status(400).json({ success: false, message: 'smsReminderEnabled true veya false olmalıdır' });
+    }
+
+    const sale = await prisma.sales.findFirst({
+      where: { id: parseInt(id), accountId, isDeleted: false }
+    });
+
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Satış bulunamadı' });
+    }
+
+    const enabled = smsReminderEnabled === true || smsReminderEnabled === 'true';
+
+    await prisma.sales.update({
+      where: { id: parseInt(id) },
+      data: { smsReminderEnabled: enabled }
+    });
+
+    res.json({
+      success: true,
+      message: `SMS hatırlatma ${enabled ? 'açıldı' : 'kapatıldı'}`,
+      data: { saleId: parseInt(id), smsReminderEnabled: enabled }
+    });
+  } catch (error) {
+    console.error('SMS hatırlatma güncelleme hatası:', error);
+    res.status(500).json({ success: false, message: 'Güncelleme yapılamadı', error: error.message });
+  }
+};
+
+/**
+ * GET /api/sales/:id/installments
+ * Satışın taksit planını getirir.
+ */
+export const getInstallmentPlan = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const { id } = req.params;
+
+    const sale = await prisma.sales.findFirst({
+      where: { id: parseInt(id), accountId, isDeleted: false },
+      include: {
+        client: { select: { id: true, firstName: true, lastName: true, phone: true } },
+        service: { select: { id: true, serviceName: true } },
+        payments: {
+          where: { installmentNumber: { not: null } },
+          orderBy: { installmentNumber: 'asc' }
+        }
+      }
+    });
+
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Satış bulunamadı' });
+    }
+
+    if (!sale.isInstallment || sale.payments.length === 0) {
+      return res.status(404).json({ success: false, message: 'Bu satışa ait taksit planı bulunamadı' });
+    }
+
+    const totalPaid = sale.payments
+      .filter(p => p.status === 'COMPLETED')
+      .reduce((sum, p) => sum + parseFloat(p.amountPaid), 0);
+
+    const totalRemaining = sale.payments
+      .filter(p => p.status === 'PENDING')
+      .reduce((sum, p) => sum + parseFloat(p.amountPaid), 0);
+
+    res.json({
+      success: true,
+      data: {
+        saleId: sale.id,
+        saleDate: sale.saleDate,
+        totalAmount: parseFloat(sale.totalAmount),
+        isInstallment: sale.isInstallment,
+        installmentCount: sale.installmentCount,
+        smsReminderEnabled: sale.smsReminderEnabled,
+        client: sale.client,
+        service: sale.service,
+        summary: {
+          totalPaid,
+          totalRemaining,
+          paidCount: sale.payments.filter(p => p.status === 'COMPLETED').length,
+          pendingCount: sale.payments.filter(p => p.status === 'PENDING').length
+        },
+        installments: sale.payments
+      }
+    });
+  } catch (error) {
+    console.error('Taksit planı getirme hatası:', error);
+    res.status(500).json({ success: false, message: 'Taksit planı getirilemedi', error: error.message });
+  }
+};
+
+/**
+ * GET /api/sales/installments/pending
+ * Hesabın vadesi yaklaşan/geçmiş bekleyen taksitlerini listeler.
+ * Query: days (kaç gün içindeki vadeler, varsayılan 7)
+ */
+export const getPendingInstallments = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const days = parseInt(req.query.days) || 7;
+
+    const now = new Date();
+    const futureDate = new Date(now);
+    futureDate.setDate(futureDate.getDate() + days);
+    futureDate.setHours(23, 59, 59, 999);
+
+    const pendingPayments = await prisma.payments.findMany({
+      where: {
+        status: 'PENDING',
+        installmentNumber: { not: null },
+        dueDate: { lte: futureDate },
+        sale: { accountId, isDeleted: false }
+      },
+      include: {
+        sale: {
+          select: {
+            id: true,
+            totalAmount: true,
+            smsReminderEnabled: true,
+            client: { select: { id: true, firstName: true, lastName: true, phone: true } },
+            service: { select: { serviceName: true } }
+          }
+        }
+      },
+      orderBy: { dueDate: 'asc' }
+    });
+
+    const enriched = pendingPayments.map(p => ({
+      ...p,
+      isOverdue: new Date(p.dueDate) < now,
+      daysUntilDue: Math.ceil((new Date(p.dueDate) - now) / (1000 * 60 * 60 * 24))
+    }));
+
+    res.json({
+      success: true,
+      data: enriched,
+      summary: {
+        total: enriched.length,
+        overdue: enriched.filter(p => p.isOverdue).length,
+        upcoming: enriched.filter(p => !p.isOverdue).length
+      }
+    });
+  } catch (error) {
+    console.error('Bekleyen taksitler hatası:', error);
+    res.status(500).json({ success: false, message: 'Bekleyen taksitler getirilemedi', error: error.message });
+  }
+};

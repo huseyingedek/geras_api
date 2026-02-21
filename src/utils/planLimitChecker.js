@@ -37,6 +37,19 @@ async function getPlanLimitError(accountId, limitKey) {
     });
   }
 
+  if (limitKey === 'maxSmsCredits') {
+    // 0 ise SMS tamamen kapalı, negatif veya null ise sınırsız
+    if (maxAllowed === 0) {
+      return new AppError(
+        `${plan.name} planınızda SMS gönderimi aktif değil. Planınızı yükseltin.`,
+        403,
+        ErrorCodes.PLAN_LIMIT_EXCEEDED
+      );
+    }
+    // Aylık SMS sayısını say (campaign sms log yoksa şimdilik geç)
+    return null;
+  }
+
   if (currentCount >= maxAllowed) {
     const labelMap = {
       maxStaff: 'personel',

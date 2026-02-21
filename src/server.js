@@ -4,6 +4,7 @@ import prisma, { checkDatabaseConnection } from './lib/prisma.js';
 import { startReminderService } from './services/reminderService.js';
 import { startIncompleteAppointmentsService } from './services/incompleteAppointmentsService.js';
 import { startDemoCronJob, initialCheck } from './utils/demoCronJob.js';
+import { startInstallmentCronJob } from './utils/installmentCronJob.js';
 
 dotenv.config();
 
@@ -50,6 +51,9 @@ async function startServer() {
     
     // 🎯 Demo hesap süre kontrolü servisini başlat
     startDemoCronJob();
+    
+    // 💳 Taksit hatırlatma SMS servisini başlat (Her gün 09:00)
+    startInstallmentCronJob();
     
     // İlk kontrol (opsiyonel) - GEÇICI KAPALI (migration sonrası aç)
     // await initialCheck();

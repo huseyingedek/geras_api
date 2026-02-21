@@ -22,9 +22,17 @@ router.route('/')
 router.route('/payments')
   .get(checkPermission('payments', 'view'), salesController.getAllPayments);
 
+// Taksit: bekleyen taksitler (static route — /:id'den önce tanımlanmalı)
+router.route('/installments/pending')
+  .get(checkPermission('payments', 'view'), salesController.getPendingInstallments);
+
 router.route('/payments/:paymentId')
   .get(checkPermission('payments', 'view'), salesController.getPaymentById)
   .patch(checkPermission('payments', 'update'), salesController.updatePaymentStatus);
+
+// Taksit: tekil taksit güncelle (tutar / vade tarihi)
+router.route('/payments/:paymentId/installment')
+  .patch(checkPermission('payments', 'update'), salesController.updateInstallment);
 
 router.route('/:id')
   .get(checkPermission('sales', 'view'), salesController.getSaleById)
@@ -37,6 +45,15 @@ router.route('/:id/hard')
 router.route('/:id/payments')
   .get(checkPermission('sales', 'view'), salesController.getSalePayments)
   .post(checkPermission('sales', 'create'), salesController.addPaymentToSale);
+
+// Taksit sistemi
+router.route('/:id/installments')
+  .get(checkPermission('sales', 'view'), salesController.getInstallmentPlan)
+  .post(checkPermission('sales', 'create'), salesController.createInstallmentPlan);
+
+// Taksit SMS hatırlatma ayarı
+router.route('/:id/sms-reminder')
+  .patch(checkPermission('sales', 'update'), salesController.toggleInstallmentSmsReminder);
 
 router.route('/:id/sessions')
   .get(checkPermission('sales', 'view'), salesController.getSaleSessions)

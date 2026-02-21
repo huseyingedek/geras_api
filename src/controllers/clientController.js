@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
 import prisma from '../lib/prisma.js';
-import { checkPlanLimit } from '../utils/planLimitChecker.js';
+import { checkPlanLimit, getPlanLimitError } from '../utils/planLimitChecker.js';
 import { sendSMS } from '../utils/smsService.js';
 
 const catchAsync = fn => {
@@ -882,6 +882,71 @@ const declineConsent = catchAsync(async (req, res, next) => {
   });
 });
 
+// POST /api/clients/:id/sms — Kampanya SMS gönderimi (sadakat raporu vb.)
+const sendCampaignSMS = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { message } = req.body;
+  const accountId = req.user.accountId;
+
+  // Mesaj boş mu?
+  if (!message || !message.trim()) {
+    return next(new AppError('Mesaj içeriği boş olamaz', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  // Müşteriyi getir
+  const client = await prisma.clients.findFirst({
+    where: { id: parseInt(id), accountId, isActive: true },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      phone: true,
+      marketingConsent: true
+    }
+  });
+
+  if (!client) {
+    return next(new AppError('Müşteri bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+  }
+
+  // Telefon var mı?
+  if (!client.phone) {
+    return next(new AppError('Müşterinin telefon numarası kayıtlı değil', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+  }
+
+  // KVKK: pazarlama onayı var mı?
+  if (!client.marketingConsent) {
+    return next(new AppError(
+      'Bu müşteri pazarlama SMS\'i almayı onaylamamış. Önce KVKK onayı alınmalıdır.',
+      403,
+      ErrorCodes.GENERAL_FORBIDDEN
+    ));
+  }
+
+  // Plan SMS kredi kontrolü
+  const limitErr = await getPlanLimitError(accountId, 'maxSmsCredits');
+  if (limitErr) return next(limitErr);
+
+  // SMS gönder
+  const smsResult = await sendSMS(client.phone, message.trim());
+
+  if (!smsResult.success && !smsResult.skipped) {
+    return next(new AppError(
+      smsResult.error || 'SMS gönderilemedi',
+      500,
+      ErrorCodes.GENERAL_SERVER_ERROR
+    ));
+  }
+
+  res.json({
+    success: true,
+    message: 'SMS gönderildi',
+    ...(process.env.NODE_ENV === 'development' && {
+      dev: { clientName: `${client.firstName} ${client.lastName}`, phone: client.phone, skipped: smsResult.skipped }
+    })
+  });
+});
+
 export {
   createClient,
   getAllClients,
@@ -894,5 +959,6 @@ export {
   requestConsentViaSMS,
   getConsentPage,
   approveConsent,
-  declineConsent
+  declineConsent,
+  sendCampaignSMS
 }; 

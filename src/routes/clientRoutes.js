@@ -34,4 +34,7 @@ router.route('/:id/consent')
 // Personel: Müşteriye SMS ile KVKK onay talebi gönder
 router.post('/:id/consent/request', checkPermission('clients', 'update'), clientController.requestConsentViaSMS);
 
+// Kampanya SMS gönderimi (sadakat raporu vb.) — marketingConsent zorunlu
+router.post('/:id/sms', checkPermission('clients', 'update'), clientController.sendCampaignSMS);
+
 export default router; 

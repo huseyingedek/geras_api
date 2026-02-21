@@ -101,40 +101,46 @@ model Clients {
 }
 
 model Sales {
-  id                Int                @id @default(autoincrement()) @map("SaleID")
-  accountId         Int                @map("AccountID")
-  clientId          Int                @map("ClientID")
-  serviceId         Int                @map("ServiceID")
-  saleDate          DateTime           @default(now()) @map("SaleDate")
-  totalAmount       Decimal            @map("TotalAmount") @db.Decimal(10, 2)
-  remainingSessions Int                @map("RemainingSessions")
-  isDeleted         Boolean            @default(false) @map("IsDeleted")
-  createdAt         DateTime           @default(now()) @map("CreatedAt")
-  updatedAt         DateTime           @default(now()) @updatedAt @map("UpdatedAt")
-  notes             String?            @map("Notes")
-  reference_id      Int?
-  appointments      Appointments[]
-  payments          Payments[]
-  account           Accounts           @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  client            Clients            @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  service           Services           @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  reference_sources reference_sources? @relation(fields: [reference_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_reference")
-  sessions          Sessions[]
+  id                  Int                @id @default(autoincrement()) @map("SaleID")
+  accountId           Int                @map("AccountID")
+  clientId            Int                @map("ClientID")
+  serviceId           Int                @map("ServiceID")
+  saleDate            DateTime           @default(now()) @map("SaleDate")
+  totalAmount         Decimal            @map("TotalAmount") @db.Decimal(10, 2)
+  remainingSessions   Int                @map("RemainingSessions")
+  isDeleted           Boolean            @default(false) @map("IsDeleted")
+  createdAt           DateTime           @default(now()) @map("CreatedAt")
+  updatedAt           DateTime           @default(now()) @updatedAt @map("UpdatedAt")
+  notes               String?            @map("Notes")
+  reference_id        Int?
+  isInstallment       Boolean            @default(false) @map("IsInstallment")
+  installmentCount    Int?               @map("InstallmentCount")
+  smsReminderEnabled  Boolean            @default(true) @map("SmsReminderEnabled")
+  appointments        Appointments[]
+  payments            Payments[]
+  account             Accounts           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  client              Clients            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  service             Services           @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  reference_sources   reference_sources? @relation(fields: [reference_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_reference")
+  sessions            Sessions[]
 
   @@map("Sales")
 }
 
 model Payments {
-  id            Int           @id @default(autoincrement()) @map("PaymentID")
-  saleId        Int           @map("SaleID")
-  paymentDate   DateTime      @default(now()) @map("PaymentDate")
-  amountPaid    Decimal       @map("AmountPaid") @db.Decimal(10, 2)
-  paymentMethod PaymentMethod @default(CASH) @map("PaymentMethod")
-  status        PaymentStatus @default(PENDING) @map("Status")
-  notes         String?       @map("Notes")
-  createdAt     DateTime      @default(now()) @map("CreatedAt")
-  updatedAt     DateTime      @default(now()) @updatedAt @map("UpdatedAt")
-  sale          Sales         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  id                Int           @id @default(autoincrement()) @map("PaymentID")
+  saleId            Int           @map("SaleID")
+  paymentDate       DateTime      @default(now()) @map("PaymentDate")
+  amountPaid        Decimal       @map("AmountPaid") @db.Decimal(10, 2)
+  paymentMethod     PaymentMethod @default(CASH) @map("PaymentMethod")
+  status            PaymentStatus @default(PENDING) @map("Status")
+  notes             String?       @map("Notes")
+  createdAt         DateTime      @default(now()) @map("CreatedAt")
+  updatedAt         DateTime      @default(now()) @updatedAt @map("UpdatedAt")
+  dueDate           DateTime?     @map("DueDate")
+  installmentNumber Int?          @map("InstallmentNumber")
+  reminderSentAt    DateTime?     @map("ReminderSentAt")
+  sale              Sales         @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   @@map("Payments")
 }
