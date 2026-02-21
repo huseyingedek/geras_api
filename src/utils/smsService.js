@@ -310,18 +310,24 @@ export const generateVerificationCode = () => {
  * @returns {Promise<object>}
  */
 export const sendDemoAccountNotification = async (demoData) => {
-  const { businessName, contactPerson, phone, email } = demoData;
-  
+  const { accountId, businessName, contactPerson, phone, email, demoExpiresAt } = demoData;
+
   const adminPhone = process.env.ADMIN_NOTIFICATION_PHONE || '905354676801';
-  
-  const message = `🎯 YENI DEMO HESAP ACILDI!
 
-Isletme: ${businessName}
-Yetkili: ${contactPerson}
-Tel: ${phone || 'Yok'}
-Email: ${email || 'Yok'}
+  let expireStr = 'Belirtilmedi';
+  if (demoExpiresAt) {
+    const d = new Date(demoExpiresAt);
+    expireStr = `${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')}.${d.getFullYear()}`;
+  }
 
-2 gunluk demo basladi.
+  const message = `YENI DEMO HESAP ACILDI!
+
+ID      : #${accountId || '?'}
+Isletme : ${businessName}
+Yetkili : ${contactPerson || 'Yok'}
+Tel     : ${phone || 'Yok'}
+E-posta : ${email || 'Yok'}
+Demo son: ${expireStr}
 
 GERAS System`;
 

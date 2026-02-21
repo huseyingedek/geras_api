@@ -475,7 +475,7 @@ const createDemoAccount = async (req, res, next) => {
           subscriptionPlan: 'DEMO', // Demo planı
           isActive: true,
           isDemoAccount: true, // 🎯 Demo işareti
-          demoExpiresAt: demoExpiresAt, // 2 gün sonra
+          demoExpiresAt: demoExpiresAt, // 30 gün sonra
           demoStatus: 'ACTIVE', // Aktif demo
           smsEnabled: true,
           reminderEnabled: true,
@@ -510,10 +510,12 @@ const createDemoAccount = async (req, res, next) => {
     // 🎯 Admin'e SMS bildirimi gönder
     try {
       await sendDemoAccountNotification({
-        businessName: result.account.businessName,
+        accountId:     result.account.id,
+        businessName:  result.account.businessName,
         contactPerson: result.account.contactPerson,
-        phone: result.account.phone,
-        email: result.account.email
+        phone:         result.account.phone,
+        email:         result.account.email,
+        demoExpiresAt: result.account.demoExpiresAt
       });
       console.log('✅ Admin bildirim SMS gönderildi');
     } catch (smsError) {

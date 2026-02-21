@@ -234,4 +234,127 @@ const completeOnboarding = async (req, res, next) => {
   }
 };
 
-export { getSubscription, completeOnboarding };
+// ─── İŞLETME PROFİLİ ─────────────────────────────────────────────────────────
+
+const getProfile = async (req, res, next) => {
+  try {
+    const { accountId, id: userId } = req.user;
+
+    const [account, user] = await Promise.all([
+      prisma.accounts.findUnique({
+        where: { id: accountId },
+        select: {
+          id:                    true,
+          businessName:          true,
+          contactPerson:         true,
+          email:                 true,
+          phone:                 true,
+          businessType:          true,
+          isOnboardingCompleted: true,
+          isDemoAccount:         true,
+          demoStatus:            true,
+          demoExpiresAt:         true,
+          createdAt:             true
+        }
+      }),
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id:       true,
+          username: true,
+          email:    true,
+          phone:    true,
+          role:     true
+        }
+      })
+    ]);
+
+    if (!account) return next(new AppError('Hesap bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        business: account,
+        user
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateProfile = async (req, res, next) => {
+  try {
+    const { accountId, id: userId } = req.user;
+
+    // İşletme alanları
+    const { businessName, contactPerson, businessEmail, businessPhone } = req.body;
+    // Kullanıcı alanları
+    const { username, userEmail, userPhone } = req.body;
+
+    const hasBusinessUpdate = businessName || contactPerson !== undefined || businessEmail !== undefined || businessPhone !== undefined;
+    const hasUserUpdate     = username || userEmail !== undefined || userPhone !== undefined;
+
+    if (!hasBusinessUpdate && !hasUserUpdate) {
+      return next(new AppError('Güncellenecek en az bir alan gönderilmelidir', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+
+    // İşletme e-postası başka hesapta var mı?
+    if (businessEmail) {
+      const conflict = await prisma.accounts.findFirst({ where: { email: businessEmail, NOT: { id: accountId } } });
+      if (conflict) return next(new AppError('Bu e-posta başka bir işletme tarafından kullanılıyor', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+
+    // Kullanıcı e-postası başka kullanıcıda var mı?
+    if (userEmail) {
+      const conflict = await prisma.user.findFirst({ where: { email: userEmail, NOT: { id: userId } } });
+      if (conflict) return next(new AppError('Bu e-posta başka bir kullanıcı tarafından kullanılıyor', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+    }
+
+    const [updatedAccount, updatedUser] = await Promise.all([
+      hasBusinessUpdate
+        ? prisma.accounts.update({
+            where: { id: accountId },
+            data: {
+              ...(businessName  !== undefined && { businessName }),
+              ...(contactPerson !== undefined && { contactPerson }),
+              ...(businessEmail !== undefined && { email: businessEmail }),
+              ...(businessPhone !== undefined && { phone: businessPhone }),
+            },
+            select: { id: true, businessName: true, contactPerson: true, email: true, phone: true, businessType: true }
+          })
+        : prisma.accounts.findUnique({
+            where: { id: accountId },
+            select: { id: true, businessName: true, contactPerson: true, email: true, phone: true, businessType: true }
+          }),
+
+      hasUserUpdate
+        ? prisma.user.update({
+            where: { id: userId },
+            data: {
+              ...(username  !== undefined && { username }),
+              ...(userEmail !== undefined && { email: userEmail }),
+              ...(userPhone !== undefined && { phone: userPhone }),
+            },
+            select: { id: true, username: true, email: true, phone: true, role: true }
+          })
+        : prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, username: true, email: true, phone: true, role: true }
+          })
+    ]);
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Profil bilgileri güncellendi',
+      data: {
+        business: updatedAccount,
+        user:     updatedUser
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export { getSubscription, completeOnboarding, getProfile, updateProfile };
