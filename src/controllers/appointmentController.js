@@ -899,29 +899,29 @@ export const updateAppointment = async (req, res) => {
     appointmentDateCheck.setHours(0, 0, 0, 0);
     
     if (appointmentDateCheck < twoDaysAgo) {
-      // COMPLETED, NO_SHOW, CANCELLED durumundaki randevular hiç değiştirilemez
+      // Zaten sonuçlanmış eski randevular değiştirilemez
       if (existingAppointment.status === 'COMPLETED' || 
           existingAppointment.status === 'NO_SHOW' || 
           existingAppointment.status === 'CANCELLED') {
         return res.status(403).json({
           success: false,
-          message: `Bu randevu ${existingAppointment.status} durumunda ve 2 günden eski olduğu için güncellenemez`,
+          message: `Bu randevu "${existingAppointment.status}" durumunda ve 2 günden eski olduğu için güncellenemez`,
           appointmentDate: existingAppointment.appointmentDate,
           currentStatus: existingAppointment.status
         });
       }
       
-      // PLANNED durumunda ise sadece status değiştirilebilir
+      // PLANNED durumunda tarih veya personel değişikliği engellenir; sadece durum ve not güncellenebilir
       if (existingAppointment.status === 'PLANNED') {
-        // Sadece status değişikliği mi yapılıyor kontrol et
-        const isOnlyStatusChange = status && !staffId && !appointmentDate && notes === undefined;
-        
-        if (!isOnlyStatusChange) {
+        const tryingToChangeDate  = appointmentDate && new Date(appointmentDate).getTime() !== existingAppointment.appointmentDate.getTime();
+        const tryingToChangeStaff = staffId && parseInt(staffId) !== existingAppointment.staffId;
+
+        if (tryingToChangeDate || tryingToChangeStaff) {
           return res.status(403).json({
             success: false,
-            message: 'Bu randevu 2 günden eski olduğu için sadece durum (status) değiştirilebilir. Tarih, personel veya not güncellenemez.',
+            message: 'Bu randevu 2 günden eski olduğu için tarih ve personel değiştirilemez. Yalnızca durum (status) veya not güncellenebilir.',
             appointmentDate: existingAppointment.appointmentDate,
-            allowedChange: 'Sadece status değiştirilebilir'
+            allowedChange: 'Sadece status ve not değiştirilebilir'
           });
         }
       }
