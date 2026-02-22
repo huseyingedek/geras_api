@@ -163,33 +163,25 @@ export const prepareAppointmentSMS = (appointmentData) => {
     customerName, 
     serviceName, 
     appointmentDate, 
-    staffName, 
     businessName 
   } = appointmentData;
 
   const date = new Date(appointmentDate);
-  const formattedDate = date.toLocaleDateString('tr-TR', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
-  
-  const formattedTime = date.toLocaleTimeString('tr-TR', {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  const day   = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year  = date.getFullYear();
+  const hour  = String(date.getHours()).padStart(2, '0');
+  const min   = String(date.getMinutes()).padStart(2, '0');
+  const formattedDateTime = `${day}.${month}.${year} / ${hour}:${min}`;
 
-  return `Sayın ${customerName},
+  return `Sn. ${customerName},
 
 ${businessName}'den bilgilendirme:
 
 Randevunuz başarıyla oluşturulmuştur.
 
-Tarih: ${formattedDate}
-Saat: ${formattedTime}
+Tarih: ${formattedDateTime}
 Hizmet: ${serviceName}
-Personel: ${staffName}
 
 Zamanında gelmenizi rica eder, ilginiz için teşekkür ederiz.
 

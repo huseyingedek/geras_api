@@ -292,8 +292,7 @@ export const getAllSales = async (req, res) => {
     const totalSales = sales.length;
     const paginatedSales = hasPageParam ? sales.slice(offset, offset + limit) : sales;
 
-    console.log('  - Toplam satış:', totalSales);
-    console.log('  - Döndürülen satış:', paginatedSales.length);
+
 
     // 📊 Summary hesaplamaları (filtrelenmiş satışlar üzerinden)
     let totalSalesAmount = 0;
@@ -435,7 +434,7 @@ export const createSale = async (req, res) => {
     let finalTotalAmount;
     let finalSessions;
 
-    if (account.businessType === 'NON_SESSION_BASED') {
+    if (account.businessType === 'NON_SESSION_BASED' || !service.isSessionBased) {
       finalSessions = 1;
       
       if (totalAmount !== undefined && totalAmount !== null) {
@@ -447,18 +446,12 @@ export const createSale = async (req, res) => {
       }
 
     } else {
-      
-      if (!requestedSessions || requestedSessions <= 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Seans/adet sayısı belirtilmelidir'
-        });
-      }
-
-      finalSessions = requestedSessions;
+      // Seans bazlı hizmet — requestedSessions gelmemişse servis default seans sayısını kullan
+      const defaultSessions = (service.sessionCount && service.sessionCount > 0) ? service.sessionCount : 1;
+      finalSessions = (requestedSessions && requestedSessions > 0) ? requestedSessions : defaultSessions;
       
       if (service.sessionCount > 1) {
-        if (requestedSessions > service.sessionCount) {
+        if (finalSessions > service.sessionCount) {
           return res.status(400).json({
             success: false,
             message: `Bu hizmet maksimum ${service.sessionCount} seans olarak satılabilir`
@@ -635,7 +628,7 @@ export const createSaleWithAppointment = async (req, res) => {
     let finalTotalAmount;
     let finalSessions;
 
-    if (account.businessType === 'NON_SESSION_BASED') {
+    if (account.businessType === 'NON_SESSION_BASED' || !service.isSessionBased) {
       finalSessions = 1;
       if (totalAmount !== undefined && totalAmount !== null) {
         finalPrice = totalAmount;
@@ -645,16 +638,11 @@ export const createSaleWithAppointment = async (req, res) => {
         finalTotalAmount = service.price;
       }
     } else {
-      if (!requestedSessions || requestedSessions <= 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Seans/adet sayısı belirtilmelidir'
-        });
-      }
+      // Seans bazlı hizmet — requestedSessions gelmemişse servis default seans sayısını kullan
+      const defaultSessions = (service.sessionCount && service.sessionCount > 0) ? service.sessionCount : 1;
+      finalSessions = (requestedSessions && requestedSessions > 0) ? requestedSessions : defaultSessions;
 
-      finalSessions = requestedSessions;
-
-      if (service.sessionCount > 1 && requestedSessions > service.sessionCount) {
+      if (service.sessionCount > 1 && finalSessions > service.sessionCount) {
         return res.status(400).json({
           success: false,
           message: `Bu hizmet maksimum ${service.sessionCount} seans olarak satılabilir`
@@ -667,7 +655,7 @@ export const createSaleWithAppointment = async (req, res) => {
       } else {
         finalPrice = service.sessionCount > 1
           ? service.price
-          : calculatePrice(service, requestedSessions);
+          : calculatePrice(service, finalSessions);
         finalTotalAmount = finalPrice;
       }
     }

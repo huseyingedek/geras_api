@@ -12,7 +12,7 @@ const createPrismaClient = () => {
       },
     },
 
-    log: isProduction ? ['error'] : ['query', 'error', 'warn'],
+    log: ['error'],
 
     errorFormat: 'minimal',
   });

@@ -7,8 +7,6 @@ import { sendSMS, prepareAppointmentReminderSMS } from '../utils/smsService.js';
  */
 const processAppointmentReminders = async () => {
   try {
-    console.log('🔔 Hatırlatma kontrolü başlatıldı:', new Date().toISOString());
-
     // Tüm aktif işletmeleri getir
     const accounts = await prisma.accounts.findMany({
       where: {
@@ -20,8 +18,6 @@ const processAppointmentReminders = async () => {
         businessName: true
       }
     });
-
-    console.log(`📊 ${accounts.length} aktif işletme bulundu`);
 
     let totalReminders = 0;
     let successfulReminders = 0;
@@ -37,8 +33,6 @@ const processAppointmentReminders = async () => {
       }
     }
 
-    console.log(`✅ Hatırlatma kontrolü tamamlandı: ${successfulReminders}/${totalReminders} başarılı`);
-
   } catch (error) {
     console.error('❌ Hatırlatma servisi genel hatası:', error);
   }
@@ -52,10 +46,6 @@ const processAccountReminders = async (accountId, businessName) => {
   
   // Gelecek 48 saat içindeki planlanmış randevuları getir
   const maxReminderTime = new Date(now.getTime() + (48 * 60 * 60 * 1000));
-  
-  console.log(`🔍 İşletme ${accountId} için randevu aranıyor:`);
-  console.log(`- Şu an: ${now.toISOString()}`);
-  console.log(`- Max zaman: ${maxReminderTime.toISOString()}`);
   
   const appointments = await prisma.appointments.findMany({
     where: {
@@ -89,22 +79,6 @@ const processAccountReminders = async (accountId, businessName) => {
     }
   });
 
-  console.log(`📊 İşletme ${accountId} - ${appointments.length} randevu bulundu`);
-  
-  // Debug: Bulunan randevuları logla (Türkiye saati ile)
-  appointments.forEach((apt, index) => {
-    const turkeyTime = new Date(apt.appointmentDate.getTime() + (3 * 60 * 60 * 1000));
-    console.log(`📅 Randevu ${index + 1}:`, {
-      id: apt.id,
-      customerName: `${apt.client?.firstName} ${apt.client?.lastName}`,
-      appointmentDate_UTC: apt.appointmentDate.toISOString(),
-      appointmentDate_Turkey: turkeyTime.toISOString(),
-      turkeyTime_Formatted: turkeyTime.toLocaleString('tr-TR'),
-      phone: apt.client?.phone ? 'VAR' : 'YOK',
-      staffUserId: apt.staff?.userId ? 'VAR' : 'YOK'
-    });
-  });
-
   let total = 0;
   let successful = 0;
 
@@ -112,7 +86,6 @@ const processAccountReminders = async (accountId, businessName) => {
     try {
       // Müşteri telefonu yoksa atla
       if (!appointment.client?.phone) {
-        console.log(`⏭️ Randevu ${appointment.id} atlandı: Müşteri telefonu yok`);
         continue;
       }
 
@@ -128,22 +101,9 @@ const processAccountReminders = async (accountId, businessName) => {
         }
       });
 
-      if (!account) {
-        console.log(`⚠️ İşletme ${accountId} bulunamadı`);
-        continue;
-      }
-
-      // SMS servisi kapalıysa atla
-      if (account.smsEnabled === false) {
-        console.log(`ℹ️ İşletme ${accountId} SMS servisi kapalı`);
-        continue;
-      }
-
-      // Hatırlatma servisi kapalıysa atla
-      if (account.reminderEnabled === false) {
-        console.log(`ℹ️ İşletme ${accountId} hatırlatma servisi kapalı`);
-        continue;
-      }
+      if (!account) continue;
+      if (account.smsEnabled === false) continue;
+      if (account.reminderEnabled === false) continue;
 
       // reminderHours: NULL ise varsayılan 24, false ise 24, yoksa değerini kullan
       const reminderHours = account.reminderHours ?? 24;
@@ -162,18 +122,6 @@ const processAccountReminders = async (accountId, businessName) => {
 
       // SON ŞANS: Eğer hatırlatma çok eski ama randevuya 3-6 saat kaldıysa yine de gönder
       const isLastChance = reminderTime < maxPastReminderTime && hoursUntilAppointment >= 3 && hoursUntilAppointment <= 6;
-
-      console.log(`🕐 Randevu ${appointment.id} hatırlatma kontrolü:`, {
-        customerName: `${appointment.client.firstName} ${appointment.client.lastName}`,
-        appointmentTime: appointment.appointmentDate.toISOString(),
-        reminderTime: reminderTime.toISOString(),
-        reminderHours: reminderHours,
-        now: now.toISOString(),
-        hoursUntilAppointment: hoursUntilAppointment.toFixed(2),
-        maxPastReminderTime: maxPastReminderTime.toISOString(),
-        isLastChance: isLastChance,
-        shouldSend: (reminderTime <= now && reminderTime >= maxPastReminderTime) || isLastChance
-      });
 
       // Hatırlatma zamanı geçti MI (ama max 12 saat öncesine kadar)? VEYA son şans mı?
       if ((reminderTime <= now && reminderTime >= maxPastReminderTime) || isLastChance) {
@@ -199,18 +147,9 @@ const processAccountReminders = async (accountId, businessName) => {
           });
           
           successful++;
-          if (isLastChance) {
-            console.log(`✅ SON ŞANS Hatırlatma SMS gönderildi: ${appointment.client.firstName} ${appointment.client.lastName} (randevuya ${hoursUntilAppointment.toFixed(1)}h kaldı)`);
-          } else {
-            console.log(`✅ Hatırlatma SMS gönderildi: ${appointment.client.firstName} ${appointment.client.lastName} (${reminderHours}h önceden)`);
-          }
         } else {
           console.error(`❌ Hatırlatma SMS hatası: ${appointment.client.firstName} ${appointment.client.lastName}`, smsResult.error);
         }
-      } else if (reminderTime > now) {
-        console.log(`⏰ Hatırlatma zamanı henüz gelmedi: ${appointment.client.firstName} ${appointment.client.lastName}`);
-      } else {
-        console.log(`⏭️ Hatırlatma zamanı çok eski (12+ saat geçmiş), atlandı: ${appointment.client.firstName} ${appointment.client.lastName}`);
       }
 
     } catch (appointmentError) {
@@ -243,7 +182,6 @@ export const testReminderService = async (req, res) => {
   try {
     const { accountId } = req.user;
     
-    console.log('🧪 Test hatırlatma kontrolü başlatıldı');
     const result = await processAccountReminders(accountId, 'Test İşletme');
     
     res.status(200).json({

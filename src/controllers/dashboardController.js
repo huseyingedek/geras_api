@@ -305,13 +305,6 @@ export const getServiceSalesReport = async (req, res) => {
     const { accountId } = req.user;
     const { period, startDate, endDate } = req.query;
 
-    // DEBUG: Gelen parametreleri logla
-    console.log('🔍 API\'ye gelen parametreler:');
-    console.log('- period:', period);
-    console.log('- startDate:', startDate);
-    console.log('- endDate:', endDate);
-    console.log('- accountId:', accountId);
-
     if (!accountId) {
       return res.status(400).json({
         success: false,
@@ -327,15 +320,6 @@ export const getServiceSalesReport = async (req, res) => {
       
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      
-      // DEBUG: Tarih dönüştürmeyi logla
-      console.log('📅 Tarih dönüştürme:');
-      console.log('- Gelen startDate string:', startDate);
-      console.log('- Dönüştürülen start Date:', start);
-      console.log('- start.toISOString():', start.toISOString());
-      console.log('- Gelen endDate string:', endDate);
-      console.log('- Dönüştürülen end Date:', end);
-      console.log('- end.toISOString():', end.toISOString());
       
       dateFilter = {
         gte: start,
@@ -416,10 +400,6 @@ export const getServiceSalesReport = async (req, res) => {
       paymentsWhereClause.paymentDate = dateFilter;
     }
 
-    console.log('🔍 Database sorguları:');
-    console.log('- salesWhereClause:', JSON.stringify(salesWhereClause, null, 2));
-    console.log('- paymentsWhereClause:', JSON.stringify(paymentsWhereClause, null, 2));
-
     // Paralel sorgular
     const [sales, payments] = await Promise.all([
       // 1. Tarih aralığında yapılan satışlar
@@ -452,17 +432,6 @@ export const getServiceSalesReport = async (req, res) => {
         }
       })
     ]);
-
-    // DEBUG: Dönen verileri logla
-    console.log('📊 Database den dönen veriler:');
-    console.log('- Toplam satış sayısı:', sales.length);
-    console.log('- Toplam ödeme sayısı:', payments.length);
-    console.log('- İlk 3 satış:', sales.slice(0, 3).map(sale => ({
-      id: sale.id,
-      saleDate: sale.saleDate,
-      serviceName: sale.service.serviceName,
-      totalAmount: sale.totalAmount
-    })));
 
     // Hizmet bazlı gruplama ve hesaplama
     const serviceStats = {};

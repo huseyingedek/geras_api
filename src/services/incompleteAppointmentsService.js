@@ -13,8 +13,6 @@ import prisma from '../lib/prisma.js';
  */
 const checkIncompleteAppointments = async () => {
   try {
-    console.log('📊 Tamamlanmamış randevu kontrolü başlatıldı:', new Date().toISOString());
-
     // Tüm aktif işletmeleri getir
     const accounts = await prisma.accounts.findMany({
       where: {
@@ -25,8 +23,6 @@ const checkIncompleteAppointments = async () => {
         businessName: true
       }
     });
-
-    console.log(`📈 ${accounts.length} aktif işletme bulundu`);
 
     let totalNotifications = 0;
 
@@ -39,8 +35,6 @@ const checkIncompleteAppointments = async () => {
         console.error(`❌ İşletme ${account.id} kontrol hatası:`, accountError);
       }
     }
-
-    console.log(`✅ Tamamlanmamış randevu kontrolü tamamlandı: ${totalNotifications} bildirim gönderildi`);
 
   } catch (error) {
     console.error('❌ Tamamlanmamış randevu servisi genel hatası:', error);
@@ -68,10 +62,6 @@ const processAccountIncompleteAppointments = async (accountId, businessName) => 
   // Dünün bitiş tarihi (bugün hariç son 7 gün için)
   const yesterdayEnd = new Date(todayStart);
   yesterdayEnd.setMilliseconds(-1);
-
-  console.log(`🔍 İşletme ${accountId} (${businessName}) için randevular kontrol ediliyor:`);
-  console.log(`- Bugün: ${todayStart.toISOString()} - ${todayEnd.toISOString()}`);
-  console.log(`- Son 7 gün: ${last7DaysStart.toISOString()} - ${yesterdayEnd.toISOString()}`);
 
   // 1️⃣ BUGÜNÜN TAMAMLANMAMIŞ RANDEVULARı (sadece PLANNED)
   const todayIncomplete = await prisma.appointments.findMany({
@@ -135,11 +125,7 @@ const processAccountIncompleteAppointments = async (accountId, businessName) => 
     }
   });
 
-  console.log(`📊 İşletme ${accountId} - Bugün: ${todayIncomplete.length}, Son 7 gün: ${last7DaysIncomplete.length}`);
-
-  // Hiç tamamlanmamış randevu yoksa bildirim gönderme
   if (todayIncomplete.length === 0 && last7DaysIncomplete.length === 0) {
-    console.log(`✅ İşletme ${accountId} - Tüm randevular tamamlanmış!`);
     return { notificationsSent: 0 };
   }
 
@@ -204,8 +190,6 @@ const processAccountIncompleteAppointments = async (accountId, businessName) => 
     }
   });
 
-  console.log(`👥 İşletme ${accountId} - ${adminUsers.length} yönetici kullanıcı bulundu`);
-
   // Her yöneticiye bildirim gönder
   let notificationsSent = 0;
   for (const user of adminUsers) {
@@ -224,14 +208,10 @@ const processAccountIncompleteAppointments = async (accountId, businessName) => 
       });
       
       notificationsSent++;
-      console.log(`✅ Bildirim gönderildi: ${user.username} (${user.role})`);
-      
     } catch (notificationError) {
       console.error(`❌ Bildirim gönderme hatası (User ${user.id}):`, notificationError);
     }
   }
-
-  console.log(`📧 İşletme ${accountId} - ${notificationsSent} bildirim gönderildi`);
 
   return { notificationsSent };
 };
@@ -242,7 +222,6 @@ const processAccountIncompleteAppointments = async (accountId, businessName) => 
 export const startIncompleteAppointmentsService = () => {
   // Her gün saat 22:30'da çalış
   cron.schedule('30 22 * * *', () => {
-    console.log('🔔 Saat 22:30 - Tamamlanmamış randevu kontrolü başlatılıyor...');
     checkIncompleteAppointments();
   }, {
     scheduled: true,
@@ -250,9 +229,7 @@ export const startIncompleteAppointmentsService = () => {
   });
 
   console.log('📊 Tamamlanmamış randevu bildirim servisi başlatıldı - Her gün 22:30\'da çalışacak');
-  
-  // İlk çalıştırmada anlık kontrol (debug için)
-  console.log('🧪 İlk kontrol yapılıyor (debug)...');
+
   setTimeout(() => {
     checkIncompleteAppointments();
   }, 5000); // 5 saniye sonra
@@ -264,8 +241,6 @@ export const startIncompleteAppointmentsService = () => {
 export const manualCheckIncomplete = async (req, res) => {
   try {
     const { accountId } = req.user;
-    
-    console.log('🧪 Manuel kontrol başlatıldı - accountId:', accountId);
     
     const account = await prisma.accounts.findUnique({
       where: { id: accountId },

@@ -337,24 +337,9 @@ const forgotPassword = async (req, res, next) => {
 // 🔐 Şifre Sıfırlama (Reset Password)
 const resetPassword = async (req, res, next) => {
   try {
-    // 🔍 DEBUG - Frontend'den gelen veriyi logla
-    console.log('===============================');
-    console.log('📥 RESET PASSWORD REQUEST');
-    console.log('Method:', req.method);
-    console.log('Content-Type:', req.headers['content-type']);
-    console.log('Body Keys:', Object.keys(req.body));
-    console.log('Body:', JSON.stringify(req.body, null, 2));
-    console.log('===============================');
-    
     const { token, newPassword } = req.body;
 
-    // ✅ GÜVENLİK: Validasyon
     if (!token || !newPassword) {
-      console.log('❌ VALIDATION FAILED:');
-      console.log('  - Token var mı?:', !!token, '| Değer:', token);
-      console.log('  - NewPassword var mı?:', !!newPassword, '| Değer:', newPassword);
-      console.log('  - Body.token type:', typeof req.body.token);
-      console.log('  - Body.newPassword type:', typeof req.body.newPassword);
       return next(new AppError('Token ve yeni şifre gereklidir', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
     }
 

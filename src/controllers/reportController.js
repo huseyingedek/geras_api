@@ -14,13 +14,6 @@ export const getIncomeExpenseSummary = async (req, res) => {
     const { accountId } = req.user;
     const { period, startDate, endDate } = req.query;
 
-    console.log('📊 Gelir-Gider Raporu İsteği:');
-    console.log('- accountId:', accountId);
-    console.log('- period:', period);
-    console.log('- startDate:', startDate);
-    console.log('- endDate:', endDate);
-    console.log('- Request Query:', req.query);
-
     // Tarih filtresi oluştur
     let dateFilter = {};
     let periodLabel = '';
@@ -55,10 +48,6 @@ export const getIncomeExpenseSummary = async (req, res) => {
         periodLabel = `${startDay} ${startMonth} - ${endDay} ${endMonth} ${endYear}`;
       }
       
-      console.log('🗓️ Custom Tarih Aralığı Kullanılıyor:');
-      console.log('  - Başlangıç:', start.toISOString());
-      console.log('  - Bitiş:', end.toISOString());
-      console.log('  - Label:', periodLabel);
     } else {
       // Preset periyotlar
       const now = new Date();
@@ -79,14 +68,6 @@ export const getIncomeExpenseSummary = async (req, res) => {
             todayNow.getUTCDate(),
             23, 59, 59, 999
           ));
-          
-          console.log('🗓️ TODAY Hesaplama:');
-          console.log('  - Bugün (now):', todayNow.toISOString());
-          console.log('  - UTC Date:', todayNow.getUTCDate());
-          console.log('  - UTC Month:', todayNow.getUTCMonth());
-          console.log('  - UTC Year:', todayNow.getUTCFullYear());
-          console.log('  - todayStart (ISO):', todayStart.toISOString());
-          console.log('  - todayEnd (ISO):', todayEnd.toISOString());
           
           dateFilter = {
             gte: todayStart,
@@ -175,11 +156,6 @@ export const getIncomeExpenseSummary = async (req, res) => {
             0, 0, 0, 0
           ));
           
-          console.log('🗓️ THIS_MONTH Hesaplama:');
-          console.log('  - Bugün (now):', now.toISOString());
-          console.log('  - monthStart (ISO):', monthStart.toISOString());
-          console.log('  - monthStart tarih:', monthStart.toISOString().split('T')[0]);
-          
           dateFilter = {
             gte: monthStart,
             lte: now
@@ -239,8 +215,6 @@ export const getIncomeExpenseSummary = async (req, res) => {
       }
     }
 
-    console.log('📅 Tarih Filtresi:', dateFilter);
-
     // ===================================================
     // 💰 GELİRLER (INCOME) - Tamamlanan Ödemeler
     // ===================================================
@@ -260,8 +234,6 @@ export const getIncomeExpenseSummary = async (req, res) => {
     if (Object.keys(dateFilter).length > 0) {
       paymentsWhereClause.paymentDate = dateFilter;
     }
-
-    console.log('💰 Gelir Analizi Başlıyor...');
 
     // Tüm tamamlanan ödemeleri çek
     const payments = await prisma.payments.findMany({
@@ -285,8 +257,6 @@ export const getIncomeExpenseSummary = async (req, res) => {
       }
     });
 
-    console.log(`- Toplam ${payments.length} COMPLETED ödeme bulundu`);
-
     // Gelir hesaplamaları
     let totalIncome = 0;
     const incomeByPaymentMethod = {
@@ -301,14 +271,6 @@ export const getIncomeExpenseSummary = async (req, res) => {
       totalIncome += amount;
       incomeByPaymentMethod[payment.paymentMethod] += amount;
     });
-
-    console.log('📊 Gelir Yöntemi Dağılımı:');
-    console.log('- Nakit:', incomeByPaymentMethod.CASH.toFixed(2), 'TL');
-    console.log('- Kredi Kartı:', incomeByPaymentMethod.CREDIT_CARD.toFixed(2), 'TL');
-    console.log('- Transfer:', incomeByPaymentMethod.TRANSFER.toFixed(2), 'TL');
-    console.log('- Diğer:', incomeByPaymentMethod.OTHER.toFixed(2), 'TL');
-    console.log('- TOPLAM GELİR:', totalIncome.toFixed(2), 'TL');
-    console.log('---');
 
     // ===================================================
     // 💸 GİDERLER (EXPENSES)
@@ -358,9 +320,6 @@ export const getIncomeExpenseSummary = async (req, res) => {
       partial: 0
     };
 
-    console.log('💸 Gider Analizi Başlıyor...');
-    console.log(`- Toplam ${expenses.length} gider kaydı bulundu`);
-
     expenses.forEach(expense => {
       const amount = parseFloat(expense.Amount);
       const paidAmount = parseFloat(expense.PaidAmount || 0);
@@ -401,12 +360,6 @@ export const getIncomeExpenseSummary = async (req, res) => {
         expensesByPaymentStatus.pending += amount;
       }
     });
-
-    console.log('📊 Gider Tipi Dağılımı:');
-    console.log('- Staff:', expensesByType.staff.toFixed(2), 'TL');
-    console.log('- Vendor:', expensesByType.vendor.toFixed(2), 'TL');
-    console.log('- Other (general dahil):', expensesByType.other.toFixed(2), 'TL');
-    console.log('- Toplam:', totalExpenses.toFixed(2), 'TL');
 
     // ===================================================
     // 📊 HESAPLAMALAR VE SONUÇLAR
@@ -737,9 +690,9 @@ function getCampaignRecommendation(segment, temperature, client, favoriteService
       type: 'LOYALTY_REWARD',
       title: 'VIP Sadakat Ödülü',
       messages: [
-        `Sayın ${salut}, ${biz} olarak sizi her ziyaretinizde ağırlamaktan büyük mutluluk duyuyoruz. Değerli VIP müşterimiz olarak bu ay size özel bir sürpriz hazırladık; bir sonraki randevunuzda sizi bekliyoruz.`,
-        `Sayın ${salut}, ${biz} ailesinin en değerli üyelerinden biri olduğunuz için size teşekkür etmek istedik. ${svc ? `${svc} hizmetinizdeki` : 'Her'} sadakatinizin karşılığı olarak sizi özel bir teklifle ağırlamak istiyoruz; uygun gününüzü bize bildirin.`,
-        `Sayın ${salut}, uzun süreli tercihleriniz ve güveniniz bizim için çok değerli. ${biz} ekibi olarak sizi ${svc ? `${svc} konusunda` : 'gelecek ziyaretinizde'} özel avantajlarla karşılamaya hazırız; randevunuzu oluşturun.`,
+        `Sayın ${salut},\n\n${biz} olarak sizinle yeniden iletişime geçmekten memnuniyet duyuyoruz. Her ziyaretinizde bize duyduğunuz güven ve sadakat bizim için büyük bir onurdur.\n\nDeğerli VIP müşterimiz olarak bu dönem size özel hazırladığımız ayrıcalıklı tekliften yararlanmak için lütfen bizi arayın veya randevunuzu oluşturun.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${biz} ailesinin en değerli üyeleri arasında yer aldığınız için sizlere özellikle teşekkür etmek istedik. ${svc ? `${svc} hizmetimizi` : 'Hizmetlerimizi'} tercih etmeye devam etmeniz bizim için büyük bir motivasyon kaynağıdır.\n\nBu ay size özel sunduğumuz sadakat teklifimizden haberdar etmek istedik. Randevunuzu oluşturmak için bizi arayabilirsiniz.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${biz} ekibi olarak uzun süreli tercihleriniz ve güveniniz için minnettarız. Sizi ${svc ? `${svc} hizmetimizde` : 'önümüzdeki ziyaretinizde'} özel ayrıcalıklarla karşılamak istiyoruz.\n\nDetaylı bilgi için bizi arayabilir ya da doğrudan randevunuzu oluşturabilirsiniz.\n\nSaygılarımızla,\n${biz}`,
       ],
       action: 'SEND_SMS',
       urgency: 'LOW',
@@ -750,9 +703,9 @@ function getCampaignRecommendation(segment, temperature, client, favoriteService
       type: 'VIP_WINBACK',
       title: 'VIP Geri Dönüş',
       messages: [
-        `Sayın ${salut}, ${biz} olarak bir süredir sizi göremedik ve özledik. Değerli VIP müşterimize özel hazırladığımız tekliften yararlanmak için lütfen bizi arayın; sizi yeniden ağırlamaktan onur duyarız.`,
-        `Sayın ${salut}, ${svc ? `${svc} bakımınızın` : 'Rutin bakımınızın'} vakti gelmiş olabilir. ${biz} ekibi olarak sizi VIP özel fiyatlarımızla bekliyoruz; randevunuzu oluşturun ya da bizi arayın.`,
-        `Sayın ${salut}, VIP müşterilerimize sunduğumuz yeni sezon ayrıcalıklarını sizinle paylaşmak istedik. ${biz} olarak uygun bir zamanda sizi görmekten memnuniyet duyarız; bizi aramanızı bekliyoruz.`,
+        `Sayın ${salut},\n\n${biz} olarak bir süredir sizinle birlikte olamadık. Değerli VIP müşterimiz için bu dönem özel olarak hazırladığımız tekliften haberdar etmek istedik.\n\nSizi yeniden ağırlamaktan büyük onur duyarız. Randevunuzu oluşturmak veya teklif detayları için bizi arayabilirsiniz.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${svc ? `${svc} bakımınızın` : 'Rutin bakımınızın'} zamanı gelmiş olabilir. ${biz} ekibi olarak VIP müşterilerimize sunduğumuz özel fiyat avantajlarıyla sizi bekliyoruz.\n\nRandevunuzu oluşturmak ya da bilgi almak için lütfen bizi arayın.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${biz} olarak yeni sezon hizmetlerimiz ve VIP müşterilerimize sunduğumuz özel ayrıcalıklar hakkında sizi bilgilendirmek istedik.\n\nBizimle iletişime geçmenizi ve uygun bir randevu ayarlamamıza imkân tanımanızı rica ederiz.\n\nSaygılarımızla,\n${biz}`,
       ],
       action: 'CALL_OR_SMS',
       urgency: 'MEDIUM',
@@ -763,9 +716,9 @@ function getCampaignRecommendation(segment, temperature, client, favoriteService
       type: 'UPSELL',
       title: 'Premium Hizmet Teklifi',
       messages: [
-        `Sayın ${salut}, ${svc ? `${svc} hizmetimizi` : 'hizmetlerimizi'} düzenli olarak tercih ettiğiniz için ${biz} ekibi adına teşekkür ederiz. Bu dönem size özel hazırladığımız premium bakım paketini tanıtmak isteriz; detaylar için bizi arayın.`,
-        `Sayın ${salut}, sadakatiniz bizim için çok değerli. ${biz} olarak size daha kapsamlı bir deneyim yaşatmak istiyoruz. Yeni premium ${svc ? `${svc}` : 'hizmet'} paketimiz hakkında bilgi almak için bizi arayabilirsiniz.`,
-        `Sayın ${salut}, ${biz}'deki düzenli ziyaretleriniz takdire şayan. Bu ayrıcalıklı müşteri ilişkimizi ileriye taşımak için size özel bir paket teklifi hazırladık; uygun gününüzde görüşelim.`,
+        `Sayın ${salut},\n\n${svc ? `${svc} hizmetimizi` : 'Hizmetlerimizi'} düzenli olarak tercih ettiğiniz için ${biz} ekibi adına içtenlikle teşekkür ederiz.\n\nBu dönem size özel hazırladığımız premium bakım paketi hakkında bilgi vermek istedik. Sizi daha kapsamlı bir deneyimle ağırlamayı çok isteriz.\n\nDetaylar için bizi arayabilirsiniz.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${biz}'deki düzenli ziyaretleriniz bizim için değerli. Sadık müşterilerimize özel olarak sunduğumuz yeni premium ${svc ? `${svc}` : 'hizmet'} paketimizi sizinle paylaşmak istedik.\n\nBu ayrıcalıktan yararlanmak için lütfen bizi arayın ya da randevunuzu oluşturun.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${biz} ekibi olarak sizi daha kapsamlı bir deneyimle karşılamak istiyoruz. Sadakatinizin bir karşılığı olarak size özel bir paket teklifi hazırladık.\n\nUygun gününüzde randevunuzu oluşturabilir veya bilgi almak için bizi arayabilirsiniz.\n\nSaygılarımızla,\n${biz}`,
       ],
       action: 'SEND_SMS',
       urgency: 'LOW',
@@ -776,9 +729,9 @@ function getCampaignRecommendation(segment, temperature, client, favoriteService
       type: 'RE_ENGAGEMENT',
       title: 'Geri Dönüş Teklifi',
       messages: [
-        `Sayın ${salut}, bir süredir ${biz}'i ziyaret etmediniz. ${svc ? `${svc} bakımınızın` : 'Rutin bakımınızın'} vakti gelmiş olabilir; size özel indirimle bu haftaya randevu ayarlamak ister misiniz?`,
-        `Sayın ${salut}, ${biz} ekibi olarak sizi tekrar görmek bizi mutlu edecek. ${svc ? `${svc}` : 'Hizmetlerimiz'} konusunda bu dönem sunduğumuz özel fırsatları sizinle paylaşmak istiyoruz; bizi arayın.`,
-        `Sayın ${salut}, aylık rutin bakımınız için ${biz}'i tercih etmenizi öneririz. Bu döneme özel hazırladığımız fırsat teklifimizden yararlanmak için lütfen bizi arayın ya da randevunuzu oluşturun.`,
+        `Sayın ${salut},\n\n${biz} olarak bir süredir sizi aramadık; bu süreçte iyi olduğunuzu umuyoruz. ${svc ? `${svc} bakımınızın` : 'Rutin bakımınızın'} vakti gelmiş olabilir.\n\nSize özel hazırladığımız indirimli tekliften yararlanmak için bu hafta randevunuzu oluşturabilirsiniz.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${biz} ekibi olarak sizi tekrar görmekten çok mutlu olacağız. Bu dönem sunduğumuz özel fırsatları sizinle paylaşmak istedik.\n\nBilgi almak ya da randevu oluşturmak için lütfen bizi arayın.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${biz}'i bir süre göremedik. Aylık rutin bakım randevunuz için sizi bekliyoruz. Bu döneme özel hazırladığımız fırsat teklifinden yararlanmak için bizimle iletişime geçebilirsiniz.\n\nSaygılarımızla,\n${biz}`,
       ],
       action: 'SEND_SMS',
       urgency: 'MEDIUM',
@@ -789,9 +742,9 @@ function getCampaignRecommendation(segment, temperature, client, favoriteService
       type: 'WIN_BACK',
       title: 'Geri Kazanma Kampanyası',
       messages: [
-        `Sayın ${salut}, ${biz} olarak uzun süredir sizi göremedik. Memnuniyetiniz bizim için en öncelikli konudur; varsa bir eksikliğimizi duymak isteriz. Sizi yeniden ağırlamak için özel bir teklifimiz mevcut, bizi arayın.`,
-        `Sayın ${salut}, geçen ziyaretinizden bu yana uzun zaman geçti. ${biz} ekibi sizden haber bekliyordu. Bu dönem size özel hazırladığımız geri dönüş teklifimizden yararlanmak için bizi arayın.`,
-        `Sayın ${salut}, ${svc ? `${svc} konusunda` : 'hizmetlerimiz konusunda'} farklı bir deneyim arayışında olabilirsiniz. ${biz} olarak hizmetlerimizi yeniledik ve sizi tekrar davet etmek istiyoruz; size özel bir teklifimiz var.`,
+        `Sayın ${salut},\n\n${biz} ekibi olarak uzun süredir sizi göremediğimizin farkındayız. Memnuniyetiniz bizim için her şeyden önemlidir; varsa bir eksikliğimizi duymak isteriz.\n\nSizi yeniden ağırlamak için size özel bir teklif hazırladık. Bizi arayarak bu avantajdan yararlanabilirsiniz.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${biz} ailesi olarak son ziyaretinizden bu yana sizi özledik. Bu dönem size özel hazırladığımız geri dönüş teklifimizi paylaşmak istedik.\n\nDetaylar için bizi aramanızı bekliyoruz.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${biz} olarak hizmetlerimizi sürekli geliştiriyoruz. ${svc ? `${svc} alanındaki` : 'Sunduğumuz'} yenilikleri sizinle paylaşmak ve sizi tekrar aramızda görmek istiyoruz.\n\nSize özel bir teklifimiz hazır; lütfen bizi arayın.\n\nSaygılarımızla,\n${biz}`,
       ],
       action: 'CALL_OR_SMS',
       urgency: 'HIGH',
@@ -802,9 +755,9 @@ function getCampaignRecommendation(segment, temperature, client, favoriteService
       type: 'AGGRESSIVE_WIN_BACK',
       title: 'Müşteri Geri Kazanma',
       messages: [
-        `Sayın ${salut}, çok uzun süredir görüşemiyoruz. ${biz} ekibi olarak sizi ne kadar özlediğimizi bilmenizi istedik. Yeniden kapımızı açarsanız size %25 özel indirim ve ${avgOrderValue > 500 ? 'ücretsiz danışmanlık seansı' : 'özel bir sürpriz hediye'} sunmak istiyoruz.`,
-        `Sayın ${salut}, ${biz}'de sizi tekrar ağırlamak için özel bir teklifimiz var. Uzun aradan sonra geri dönen değerli müşterilerimize sunduğumuz bu özel fırsattan yararlanmak için lütfen bizi arayın.`,
-        `Sayın ${salut}, ${biz} ailesi olarak sizin yokluğunuzu hissettik. Bu özel geri dönüş teklifimizi sizin için sakladık; bizi bir şans daha verirseniz sizi en iyi şekilde karşılamaya hazırız.`,
+        `Sayın ${salut},\n\n${biz} ekibi olarak çok uzun süredir sizinle iletişime geçemediğimiz için üzgünüz. Sizi ne kadar özlediğimizi bilmenizi istedik.\n\nYeniden kapımızı açarsanız size özel %25 indirim ve ${avgOrderValue > 500 ? 'ücretsiz danışmanlık seansı' : 'sürpriz bir hediye'} sunmak istiyoruz. Bizi arayın, sizi en iyi şekilde karşılamaya hazırız.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${biz}'de sizi tekrar ağırlamak bizim için büyük bir mutluluk olacak. Uzun aradan sonra geri dönen değerli müşterilerimize sunduğumuz bu özel tekliften yararlanmak için lütfen bizi arayın.\n\nSizi bekliyoruz.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${biz} ailesi olarak sizin yokluğunuzu hissettik. Bu özel geri dönüş teklifini yalnızca siz gibi değerli müşterilerimiz için sakladık.\n\nBize bir şans daha verirseniz sizi en iyi şekilde karşılamaya hazırız. Lütfen bizi arayın.\n\nSaygılarımızla,\n${biz}`,
       ],
       action: 'CALL_FIRST_THEN_SMS',
       urgency: 'VERY_HIGH',
@@ -815,9 +768,9 @@ function getCampaignRecommendation(segment, temperature, client, favoriteService
       type: 'CROSS_SELL',
       title: 'Yeni Hizmet Tanıtımı',
       messages: [
-        `Sayın ${salut}, düzenli tercihleriniz için ${biz} ekibi adına teşekkür ederiz. ${svc ? `${svc} dışında` : 'Bu dönem'} yeni eklediğimiz hizmetlerimizi de denemenizi öneririz; ilk denemede size özel fiyat uygulayacağız.`,
-        `Sayın ${salut}, ${biz} olarak hizmet yelpazemizi genişlettik. ${svc ? `${svc}` : 'Mevcut hizmetlerimizin'} yanına bu sezon yeni paketler ekledik; sizin için özel bir tanıtım randevusu ayarlayalım mı?`,
-        `Sayın ${salut}, ${biz}'deki sadakatiniz bizim için teşvik edici. Bu dönem yeni sunduğumuz ${svc ? `${svc} destekli` : ''} bakım paketini sizinle paylaşmak istiyoruz; detaylar için bizi arayın.`,
+        `Sayın ${salut},\n\n${biz} ekibi adına düzenli tercihleriniz için içtenlikle teşekkür ederiz. ${svc ? `${svc} hizmetimizin` : 'Mevcut hizmetlerimizin'} yanı sıra bu sezon yeni eklediğimiz hizmetlerimizi de denemenizi öneririz.\n\nİlk denemede size özel fiyat uygulayacağız. Randevunuzu oluşturmak için bizi arayabilirsiniz.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${biz} olarak hizmet yelpazemizi genişlettik. Bu sezon eklediğimiz yeni bakım paketlerini sizinle paylaşmak istedik.\n\nÖzel tanıtım randevusu için bizi arayabilir ya da doğrudan randevunuzu oluşturabilirsiniz.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${biz}'deki sadakatiniz bizim için çok teşvik edici. Bu dönem sunduğumuz ${svc ? `${svc} destekli ` : ''}yeni bakım paketini sizinle paylaşmak istedik.\n\nDetaylar için bizi arayabilirsiniz.\n\nSaygılarımızla,\n${biz}`,
       ],
       action: 'SEND_SMS',
       urgency: 'LOW',
@@ -828,31 +781,17 @@ function getCampaignRecommendation(segment, temperature, client, favoriteService
       type: 'FREQUENCY_BOOST',
       title: 'Düzenli Ziyaret Teklifi',
       messages: [
-        `Sayın ${salut}, sizi görmek her zaman mutluluk veriyor. ${biz} olarak düzenli gelen müşterilerimize sunduğumuz özel indirim programından siz de yararlanmak ister misiniz? Detaylar için bizi arayın.`,
-        `Sayın ${salut}, ${svc ? `${svc} bakımınızı` : 'Bakım rutininizi'} daha düzenli hale getirmenizi öneririz. ${biz} olarak aylık ziyaretlerde kümülatif indirim kazandıran sadakat programımızdan yararlanabilirsiniz; bizi arayın.`,
-        `Sayın ${salut}, bir sonraki ${svc ? `${svc}` : 'bakım'} randevunuzu ne zaman planlamak istersiniz? ${biz} ekibi olarak sizi özel avantajlarımızla karşılamaya hazırız; uygun tarihi birlikte belirleyelim.`,
+        `Sayın ${salut},\n\n${biz} olarak sizi aramaktan mutluluk duyduk. Düzenli gelen müşterilerimize sunduğumuz sadakat indirim programından siz de yararlanmak ister misiniz?\n\nDetaylar için bizi arayabilirsiniz.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\n${svc ? `${svc} bakımınızı` : 'Bakım rutininizi'} daha düzenli hale getirmenizi öneririz. ${biz} olarak aylık ziyaretlerde kümülatif indirim kazandıran sadakat programımızdan yararlanabilirsiniz.\n\nBilgi almak için bizi arayın.\n\nSaygılarımızla,\n${biz}`,
+        `Sayın ${salut},\n\nBir sonraki ${svc ? `${svc}` : 'bakım'} randevunuzu planlamak için ${biz} ekibi hazır. Düzenli ziyaretlerinizde sunduğumuz özel avantajlardan yararlanmak için uygun tarihi birlikte belirleyelim.\n\nBizi arayabilirsiniz.\n\nSaygılarımızla,\n${biz}`,
       ],
       action: 'SEND_SMS',
       urgency: 'LOW',
       discountSuggestion: 'Sadakat programını tanıt, düzenli gelmeyi teşvik et',
     },
-
-    NEW: {
-      type: 'WELCOME_OFFER',
-      title: 'Hoş Geldiniz Teklifi',
-      messages: [
-        `Sayın ${salut}, ${biz} ailesine hoş geldiniz. İlk hizmet deneyiminizi özel kılmak istiyoruz. Yeni müşterilerimize sunduğumuz özel karşılama indiriminizden yararlanmak için randevunuzu bugün oluşturun.`,
-        `Sayın ${salut}, sizi ${biz} ailemizde görmekten mutluluk duyduk. İlk ziyaretinizi unutulmaz kılmak için size özel bir karşılama teklifi hazırladık; detaylar için lütfen bizi arayın.`,
-        `Sayın ${salut}, ${biz}'e hoş geldiniz. İlk randevunuzda en iyi hizmeti sunmak bizim önceliğimiz. Yeni üye indiriminizi kullanmak için bizi arayın ya da randevunuzu oluşturun.`,
-      ],
-      action: 'SEND_SMS',
-      urgency: 'MEDIUM',
-      discountSuggestion: '%15 ilk ziyaret indirimi',
-    },
   };
 
   const key = segment.key === 'LOST'    ? 'LOST'
-    : segment.key === 'NEW'             ? 'NEW'
     : segment.key === 'AT_RISK'         ? 'AT_RISK'
     : segment.key === 'VIP' && temperature.key === 'HOT'   ? 'VIP_HOT'
     : segment.key === 'VIP'             ? 'VIP_WARM'
@@ -1018,9 +957,9 @@ export const getCustomerLoyaltyReport = async (req, res) => {
 
     const totalLTV = result.reduce((s, c) => s + c.totalSpent, 0);
 
-    // Kampanya öncelik listesi — sadece pazarlama onayı verilmiş müşteriler
+    // Kampanya öncelik listesi — KVKK onaylı ve en az 2 satışı olan müşteriler
     const campaignList = [...loyaltyData]
-      .filter(c => c.marketingConsent === true)
+      .filter(c => c.marketingConsent === true && c.purchaseCount >= 2)
       .sort((a, b) => b.segment.priority - a.segment.priority || (a.daysSinceLastPurchase ?? 0) - (b.daysSinceLastPurchase ?? 0))
       .slice(0, 50)
       .map(c => ({
@@ -1039,7 +978,8 @@ export const getCustomerLoyaltyReport = async (req, res) => {
     const consentStats = {
       total: loyaltyData.length,
       consented: loyaltyData.filter(c => c.marketingConsent).length,
-      notConsented: loyaltyData.filter(c => !c.marketingConsent).length
+      notConsented: loyaltyData.filter(c => !c.marketingConsent).length,
+      campaignEligible: loyaltyData.filter(c => c.marketingConsent && c.purchaseCount >= 2).length
     };
 
     res.json({

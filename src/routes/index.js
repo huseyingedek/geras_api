@@ -14,6 +14,7 @@ import referenceRoutes from './referenceRoutes.js';
 import clientNotesRoutes from './clientNotesRoutes.js';
 import reportRoutes from './reportRoutes.js';
 import planRoutes from './planRoutes.js';
+import chatRoutes from './chatRoutes.js';
 
 const router = express.Router();
 
@@ -35,6 +36,7 @@ router.use('/expenses', expenseRoutes);
 router.use('/references', referenceRoutes);
 router.use('/reports', reportRoutes);
 router.use('/plans', planRoutes);
+router.use('/chat', chatRoutes);
 router.use('/', clientNotesRoutes); // Client notes routes
 
 export default router; 
