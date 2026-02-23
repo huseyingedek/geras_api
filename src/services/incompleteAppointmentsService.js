@@ -9,12 +9,30 @@ import prisma from '../lib/prisma.js';
  */
 
 /**
+ * Neon cold-start için basit retry yardımcısı
+ */
+const withRetry = async (fn, retries = 3, delayMs = 5000) => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isConnectionError = err?.code === 'P1001' || err?.code === 'P1002';
+      if (isConnectionError && attempt < retries) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      } else {
+        throw err;
+      }
+    }
+  }
+};
+
+/**
  * O günün tamamlanmamış randevularını kontrol et ve bildirim gönder
  */
 const checkIncompleteAppointments = async () => {
   try {
-    // Tüm aktif işletmeleri getir
-    const accounts = await prisma.accounts.findMany({
+    // Tüm aktif işletmeleri getir (Neon cold-start için retry ile)
+    const accounts = await withRetry(() => prisma.accounts.findMany({
       where: {
         isActive: true
       },
@@ -22,7 +40,7 @@ const checkIncompleteAppointments = async () => {
         id: true,
         businessName: true
       }
-    });
+    }));
 
     let totalNotifications = 0;
 

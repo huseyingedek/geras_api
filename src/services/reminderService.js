@@ -3,21 +3,39 @@ import prisma from '../lib/prisma.js';
 import { sendSMS, prepareAppointmentReminderSMS } from '../utils/smsService.js';
 
 /**
+ * Neon cold-start için basit retry yardımcısı
+ */
+const withRetry = async (fn, retries = 3, delayMs = 5000) => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isConnectionError = err?.code === 'P1001' || err?.code === 'P1002';
+      if (isConnectionError && attempt < retries) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      } else {
+        throw err;
+      }
+    }
+  }
+};
+
+/**
  * Hatırlatma gönderilecek randevuları bul ve SMS gönder
  */
 const processAppointmentReminders = async () => {
   try {
-    // Tüm aktif işletmeleri getir
-    const accounts = await prisma.accounts.findMany({
+    // Tüm aktif işletmeleri getir (Neon cold-start için retry ile)
+    const accounts = await withRetry(() => prisma.accounts.findMany({
       where: {
         isActive: true,
-        smsEnabled: true // SMS'i açık olan işletmeler
+        smsEnabled: true
       },
       select: {
         id: true,
         businessName: true
       }
-    });
+    }));
 
     let totalReminders = 0;
     let successfulReminders = 0;
