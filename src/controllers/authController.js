@@ -184,7 +184,12 @@ const getMe = async (req, res, next) => {
       status: 'success',
       data: {
         user,
-        account
+        account,
+        // Impersonation bilgisi (yoksa undefined kalır, response'a dahil olmaz)
+        ...(req.user.isImpersonating && {
+          isImpersonating:  true,
+          impersonatedBy:   req.user.impersonatedBy
+        })
       }
     });
   } catch (error) {

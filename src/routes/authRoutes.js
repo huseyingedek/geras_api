@@ -2,7 +2,7 @@ import express from 'express';
 import * as authController from '../controllers/authController.js';
 import * as adminController from '../controllers/adminController.js';
 import * as verificationController from '../controllers/verificationController.js';
-import { isAuthenticated } from '../middleware/authMiddleware.js';
+import { isAuthenticated, preventImpersonation } from '../middleware/authMiddleware.js';
 import { authLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
@@ -20,7 +20,7 @@ router.post('/create-demo', authLimiter, authController.createDemoAccount);
 
 router.get('/me', isAuthenticated, authController.getMe);
 
-router.post('/change-password', isAuthenticated, authController.changePassword);
+router.post('/change-password', isAuthenticated, preventImpersonation, authController.changePassword);
 
 // 📧 Şifre sıfırlama (login gerektirmez)
 router.post('/forgot-password', authLimiter, authController.forgotPassword);
@@ -29,6 +29,6 @@ router.post('/reset-password', authLimiter, authController.resetPassword);
 // Oturum sahibinin izin matrisi
 router.get('/my-permissions', isAuthenticated, authController.getMyPermissions);
 
-router.put('/my-business', isAuthenticated, adminController.updateMyBusiness);
+router.put('/my-business', isAuthenticated, preventImpersonation, adminController.updateMyBusiness);
 
 export default router; 

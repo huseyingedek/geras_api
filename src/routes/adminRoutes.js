@@ -3,6 +3,7 @@ import * as adminController from '../controllers/adminController.js';
 import * as planController from '../controllers/planController.js';
 import { isAuthenticated, restrictTo } from '../middleware/authMiddleware.js';
 
+
 const router = express.Router();
 
 router.use(isAuthenticated, restrictTo('ADMIN'));
@@ -40,5 +41,8 @@ router.get('/demo-accounts/pending', adminController.getPendingDemoAccounts);
 router.get('/demo-accounts', adminController.getAllDemoAccounts);
 router.post('/demo-accounts/:id/approve', adminController.approveDemoAccount);
 router.post('/demo-accounts/:id/reject', adminController.rejectDemoAccount);
+
+// 🔐 IMPERSONATİON — İşletme hesabına admin girişi
+router.post('/accounts/:id/impersonate', adminController.impersonateAccount);
 
 export default router; 

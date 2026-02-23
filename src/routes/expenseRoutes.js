@@ -1,13 +1,13 @@
 import express from 'express';
 import * as expenseController from '../controllers/expenseController.js';
-import { isAuthenticated, restrictTo } from '../middleware/authMiddleware.js';
+import { isAuthenticated, restrictTo, requireAccountId } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
 // 🔒 GİDER YÖNETİMİ - SADECE OWNER VE ADMIN ERİŞEBİLİR
 // Finansal veriler kritik olduğu için sadece işletme sahibi erişebilir
-router.use(isAuthenticated);
-router.use(restrictTo('OWNER', 'ADMIN'));
+router.use(isAuthenticated, requireAccountId);
+router.use(restrictTo('OWNER'));
 
 // ⚠️ ÖNEMLİ: /categories ve /vendors route'ları /:id'den ÖNCE olmalı
 // Aksi halde Express "categories" ve "vendors" kelimelerini ID olarak algılar

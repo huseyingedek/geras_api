@@ -1,11 +1,11 @@
 import express from 'express';
 import * as appointmentController from '../controllers/appointmentController.js';
-import { isAuthenticated } from '../middleware/authMiddleware.js';
+import { isAuthenticated, requireAccountId } from '../middleware/authMiddleware.js';
 import { checkPermission } from '../middleware/permissionMiddleware.js';
 
 const router = express.Router();
 
-router.use(isAuthenticated);
+router.use(isAuthenticated, requireAccountId);
 
 // Hızlı randevu oluşturma (müşteri + satış + randevu)
 router.route('/quick')

@@ -2,12 +2,12 @@ import express from 'express';
 import * as notificationController from '../controllers/notificationController.js';
 import { testReminderService } from '../services/reminderService.js';
 import { manualCheckIncomplete } from '../services/incompleteAppointmentsService.js';
-import { isAuthenticated, restrictTo } from '../middleware/authMiddleware.js';
+import { isAuthenticated, restrictTo, requireAccountId } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Tüm route'lar authentication gerektirir
-router.use(isAuthenticated);
+// Tüm route'lar authentication ve işletme hesabı gerektirir
+router.use(isAuthenticated, requireAccountId);
 
 // ============================================================
 // 🔔 BİLDİRİM SİSTEMİ API'LERİ

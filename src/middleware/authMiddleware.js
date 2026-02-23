@@ -13,6 +13,15 @@ const signToken = (id) => {
   );
 };
 
+// Admin impersonation için kısa süreli token
+const signImpersonationToken = (ownerId, adminId) => {
+  return jwt.sign(
+    { id: ownerId, isImpersonating: true, impersonatedBy: adminId },
+    process.env.JWT_SECRET || 'super-secret-jwt-development-key',
+    { expiresIn: '4h' }
+  );
+};
+
 const createSendToken = (user, statusCode, res) => {
   const token = signToken(user.id);
   
@@ -41,7 +50,8 @@ const isAuthenticated = async (req, res, next) => {
     const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET || 'super-secret-jwt-development-key');
     
     const currentUser = await prisma.user.findUnique({
-      where: { id: decoded.id }
+      where: { id: decoded.id },
+      include: { account: true }
     });
     
     if (!currentUser) {
@@ -49,6 +59,13 @@ const isAuthenticated = async (req, res, next) => {
     }
     
     req.user = currentUser;
+
+    // Impersonation bilgisini req.user'a ekle
+    if (decoded.isImpersonating) {
+      req.user.isImpersonating = true;
+      req.user.impersonatedBy  = decoded.impersonatedBy;
+    }
+
     next();
   } catch (error) {
     next(error);
@@ -61,14 +78,33 @@ const restrictTo = (...roles) => {
     if (!roles.includes(req.user.role)) {
       return next(new AppError('Bu işlemi yapmaya yetkiniz yok', 403, ErrorCodes.GENERAL_FORBIDDEN));
     }
-    
     next();
   };
+};
+
+// Impersonation sırasında kritik işlemleri engelle
+const preventImpersonation = (req, res, next) => {
+  if (req.user?.isImpersonating) {
+    return next(new AppError('Bu işlem yönetici girişi (impersonation) sırasında yapılamaz.', 403, ErrorCodes.GENERAL_FORBIDDEN));
+  }
+  next();
+};
+
+// İşletme endpoint'lerine erişim için accountId zorunluluğu
+// ADMIN kullanıcısı impersonation token kullanmadan bu endpoint'lere erişemez
+const requireAccountId = (req, res, next) => {
+  if (!req.user?.accountId) {
+    return next(new AppError('Bu işlem için bir işletme hesabına bağlı olmanız gerekmektedir.', 403, ErrorCodes.GENERAL_FORBIDDEN));
+  }
+  next();
 };
 
 export {
   isAuthenticated,
   restrictTo,
   signToken,
-  createSendToken
+  signImpersonationToken,
+  createSendToken,
+  preventImpersonation,
+  requireAccountId
 }; 

@@ -1,11 +1,11 @@
 import express from 'express';
 import * as clientNotesController from '../controllers/clientNotesController.js';
-import { isAuthenticated } from '../middleware/authMiddleware.js';
+import { isAuthenticated, requireAccountId } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Tüm route'lar authenticate olmalı
-router.use(isAuthenticated);
+// Tüm route'lar authentication ve işletme hesabı gerektirir
+router.use(isAuthenticated, requireAccountId);
 
 // 📝 Müşteriye not ekleme
 router.post('/clients/:clientId/notes', clientNotesController.createClientNote);

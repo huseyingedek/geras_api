@@ -1,6 +1,6 @@
 import express from 'express';
 import * as clientController from '../controllers/clientController.js';
-import { isAuthenticated } from '../middleware/authMiddleware.js';
+import { isAuthenticated, requireAccountId } from '../middleware/authMiddleware.js';
 import { checkPermission } from '../middleware/permissionMiddleware.js';
 
 const router = express.Router();
@@ -10,7 +10,7 @@ router.get('/consent/page/:token', clientController.getConsentPage);
 router.post('/consent/approve/:token', clientController.approveConsent);
 router.post('/consent/decline/:token', clientController.declineConsent);
 
-router.use(isAuthenticated);
+router.use(isAuthenticated, requireAccountId);
 
 router.route('/')
   .get(checkPermission('clients', 'view'), clientController.getAllClients)

@@ -1,12 +1,12 @@
 import express from 'express';
 import * as reportController from '../controllers/reportController.js';
-import { isAuthenticated, restrictTo } from '../middleware/authMiddleware.js';
+import { isAuthenticated, restrictTo, requireAccountId } from '../middleware/authMiddleware.js';
 import { checkPermission } from '../middleware/permissionMiddleware.js';
 
 const router = express.Router();
 
-// 🔒 Tüm rapor endpoint'leri authentication gerektirir
-router.use(isAuthenticated);
+// 🔒 Tüm rapor endpoint'leri authentication ve işletme hesabı gerektirir
+router.use(isAuthenticated, requireAccountId);
 
 /**
  * 📊 GELİR-GİDER ÖZET RAPORU

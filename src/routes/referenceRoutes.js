@@ -1,12 +1,12 @@
 import express from 'express';
 import * as referenceController from '../controllers/referenceController.js';
-import { isAuthenticated } from '../middleware/authMiddleware.js';
+import { isAuthenticated, requireAccountId } from '../middleware/authMiddleware.js';
 import { checkPermission } from '../middleware/permissionMiddleware.js';
 
 const router = express.Router();
 
-// Tüm route'lar authentication gerektirir
-router.use(isAuthenticated);
+// Tüm route'lar authentication ve işletme hesabı gerektirir
+router.use(isAuthenticated, requireAccountId);
 
 // 📊 REFERANS İSTATİSTİKLERİ (/:id'den önce!)
 router.route('/stats')

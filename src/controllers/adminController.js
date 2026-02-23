@@ -5,6 +5,7 @@ import { assignResourcePermissionsToStaff } from '../utils/permissionUtils.js';
 import prisma from '../lib/prisma.js';
 import { addBasicPermissionsToAccount } from '../utils/permissionUtils.js';
 import { SUBSCRIPTION_PLANS, PLAN_COLORS, PLAN_ICONS } from '../../subscriptionPlans.js';
+import { signImpersonationToken } from '../middleware/authMiddleware.js';
 
 const VALID_PLANS = ['DEMO', 'STARTER', 'PROFESSIONAL', 'PREMIUM'];
 
@@ -1450,6 +1451,55 @@ const changeAccountPlan = catchAsync(async (req, res, next) => {
   });
 });
 
+// 🔐 ADMİN IMPERSONATION — İşletme hesabına geçiş
+const impersonateAccount = catchAsync(async (req, res, next) => {
+  const accountId = parseInt(req.params.id);
+
+  // Admin kendi token'ı ile işletme sahibi (OWNER) kullanıcısını bul
+  const ownerUser = await prisma.user.findFirst({
+    where: {
+      accountId,
+      role: 'OWNER'
+    },
+    include: {
+      account: {
+        select: {
+          id:           true,
+          businessName: true,
+          isActive:     true
+        }
+      }
+    }
+  });
+
+  if (!ownerUser) {
+    return next(new AppError('Bu işletmeye ait yönetici (OWNER) kullanıcı bulunamadı.', 404, ErrorCodes.USER_NOT_FOUND));
+  }
+
+  if (!ownerUser.account?.isActive) {
+    return next(new AppError('Bu işletme hesabı aktif değil.', 403, ErrorCodes.ACCOUNT_RESTRICTED));
+  }
+
+  // Impersonation token üret (4 saat geçerli)
+  const impersonationToken = signImpersonationToken(ownerUser.id, req.user.id);
+
+  const { password: _, ...safeUser } = ownerUser;
+
+  res.status(200).json({
+    status:  'success',
+    message: `"${ownerUser.account.businessName}" hesabına geçiş yapıldı. Token 4 saat geçerlidir.`,
+    token:   impersonationToken,
+    data: {
+      user:    safeUser,
+      account: ownerUser.account,
+      impersonatedBy: {
+        adminId:   req.user.id,
+        adminName: req.user.username
+      }
+    }
+  });
+});
+
 export {
   createAccount,
   getAllAccounts,
@@ -1469,5 +1519,7 @@ export {
   getPendingDemoAccounts,
   getAllDemoAccounts,
   approveDemoAccount,
-  rejectDemoAccount
+  rejectDemoAccount,
+  // 🔐 IMPERSONATİON
+  impersonateAccount
 }; 
