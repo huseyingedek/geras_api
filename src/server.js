@@ -14,64 +14,50 @@ const PORT = process.env.PORT || 5000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 
-async function startServer() {
-  try {
-    const dbHealth = await Promise.race([
-      checkDatabaseConnection(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Database health check timeout')), 30000)
-      )
-    ]);
+// DB bağlantısını arka planda kontrol et (Neon cold-start'ta sunucuyu bloklamaz)
+async function checkDatabaseInBackground() {
+  const maxRetries = 5;
+  const delayMs    = 5000;
 
-    if (dbHealth.status !== 'healthy') {
-      throw new Error(`Database connection failed: ${dbHealth.error}`);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const dbHealth = await checkDatabaseConnection();
+    if (dbHealth.status === 'healthy') {
+      console.log('✅ Database connection established with Neon PostgreSQL');
+      return;
     }
-    
-    // 2. Start HTTP Server
-    const server = app.listen(PORT, () => {
-      console.log(`🚀 Server ${PORT} portunda çalışıyor`);
-      console.log(`📝 Environment: ${NODE_ENV}`);
-      console.log(`🌐 Health Check: http://localhost:${PORT}/health`);
-      console.log(`📡 API Base URL: http://localhost:${PORT}/api`);
-      
-    });
-
-    process.server = server;
-    
-    server.keepAliveTimeout = 61 * 1000; // 61 seconds
-    server.headersTimeout = 65 * 1000; // 65 seconds
-    
-    console.log('✅ Database connection established with Neon PostgreSQL');
-    
-    // 🔔 Hatırlatma servisini başlat
-    startReminderService();
-    
-    // 📊 Tamamlanmamış randevu bildirim servisini başlat
-    startIncompleteAppointmentsService();
-    
-    // 🎯 Demo hesap süre kontrolü servisini başlat
-    startDemoCronJob();
-    
-    // 💳 Taksit hatırlatma SMS servisini başlat (Her gün 09:00)
-    startInstallmentCronJob();
-    
-    // İlk kontrol (opsiyonel) - GEÇICI KAPALI (migration sonrası aç)
-    // await initialCheck();
-    
-    return server;
-    
-  } catch (error) {
-    console.error('❌ Server başlatılamadı:', error.message);
-    console.error('🔍 Error details:', error);
-    
-    try {
-      await prisma.$disconnect();
-    } catch (disconnectError) {
-      console.error('❌ Prisma disconnect error:', disconnectError);
+    if (attempt < maxRetries) {
+      console.log(`⏳ Veritabanı bağlantısı bekleniyor... (${attempt}/${maxRetries})`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
     }
-    
-    process.exit(1);
   }
+  console.error('❌ Veritabanına bağlanılamadı. Gelen istekler DB gerektiren endpoint\'lerde hata alacak.');
+}
+
+async function startServer() {
+  // HTTP sunucusunu hemen başlat — Render health-check bloklanmaz
+  const server = app.listen(PORT, () => {
+    console.log(`🚀 Server ${PORT} portunda çalışıyor`);
+    console.log(`📝 Environment: ${NODE_ENV}`);
+    console.log(`🌐 Health Check: http://localhost:${PORT}/health`);
+    console.log(`📡 API Base URL: http://localhost:${PORT}/api`);
+  });
+
+  process.server = server;
+  server.keepAliveTimeout = 61 * 1000;
+  server.headersTimeout   = 65 * 1000;
+
+  // DB kontrolü arka planda — cold-start'ta sunucuyu çöktürmez
+  checkDatabaseInBackground().catch(err =>
+    console.error('❌ Background DB check hatası:', err.message)
+  );
+
+  // Cron servislerini başlat
+  startReminderService();
+  startIncompleteAppointmentsService();
+  startDemoCronJob();
+  startInstallmentCronJob();
+
+  return server;
 }
 
 const gracefulShutdown = async (signal) => {
@@ -137,6 +123,6 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 startServer().catch((error) => {
-  console.error('❌ Server startup failed:', error);
+  console.error('❌ Server başlatılamadı:', error);
   process.exit(1);
 }); 

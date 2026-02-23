@@ -5,11 +5,17 @@ import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
 import prisma from '../lib/prisma.js';
 
+const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-development-key';
+
+if (!process.env.JWT_SECRET) {
+  console.warn('⚠️  JWT_SECRET env değişkeni tanımlı değil. Development fallback kullanılıyor. Production\'da mutlaka tanımlayın!');
+}
+
 const signToken = (id) => {
   return jwt.sign(
-    { id }, 
-    process.env.JWT_SECRET || 'super-secret-jwt-development-key', 
-    { expiresIn: process.env.JWT_EXPIRES_IN || '90d' }
+    { id },
+    JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
 };
 
@@ -17,7 +23,7 @@ const signToken = (id) => {
 const signImpersonationToken = (ownerId, adminId) => {
   return jwt.sign(
     { id: ownerId, isImpersonating: true, impersonatedBy: adminId },
-    process.env.JWT_SECRET || 'super-secret-jwt-development-key',
+    JWT_SECRET,
     { expiresIn: '4h' }
   );
 };
@@ -47,11 +53,10 @@ const isAuthenticated = async (req, res, next) => {
       return next(new AppError('Giriş yapmadınız! Lütfen giriş yapın.', 401, ErrorCodes.GENERAL_UNAUTHORIZED));
     }
     
-    const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET || 'super-secret-jwt-development-key');
-    
+    const decoded = await promisify(jwt.verify)(token, JWT_SECRET);
+
     const currentUser = await prisma.user.findUnique({
-      where: { id: decoded.id },
-      include: { account: true }
+      where: { id: decoded.id }
     });
     
     if (!currentUser) {

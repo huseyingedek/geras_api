@@ -3,13 +3,13 @@ import { PrismaClient } from '@prisma/client';
 const createPrismaClient = () => {
   let databaseUrl = process.env.DATABASE_URL;
 
-  // Neon serverless pooler için gerekli parametreler:
-  // pgbouncer=true  → PgBouncer uyumluluğu (prepared statement desteği)
-  // connect_timeout → Cold-start bekleme süresi (saniye)
+  // Neon pooler için bağlantı havuzu ayarları:
+  // pool_timeout   → Havuzdan bağlantı beklerken timeout (saniye)
+  // connection_limit → Prisma'nın açacağı max bağlantı sayısı
   if (databaseUrl && databaseUrl.includes('neon.tech')) {
     const url = new URL(databaseUrl);
-    if (!url.searchParams.has('pgbouncer'))      url.searchParams.set('pgbouncer',      'true');
-    if (!url.searchParams.has('connect_timeout')) url.searchParams.set('connect_timeout', '30');
+    if (!url.searchParams.has('pool_timeout'))    url.searchParams.set('pool_timeout',    '30');
+    if (!url.searchParams.has('connection_limit')) url.searchParams.set('connection_limit', '5');
     databaseUrl = url.toString();
   }
 

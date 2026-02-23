@@ -19,8 +19,18 @@ const app = express();
 // rate limiter'ın gerçek client IP'yi görmesi için gerekli
 app.set('trust proxy', 1);
 
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : [];
+
 const corsOptions = {
-  origin: true,
+  origin: process.env.NODE_ENV === 'production'
+    ? (origin, callback) => {
+        // Origin yoksa (mobile app, curl, server-to-server) izin ver
+        if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+        callback(new Error(`CORS: ${origin} adresine izin verilmiyor.`));
+      }
+    : true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
     'Origin', 

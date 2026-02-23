@@ -10,11 +10,13 @@ import { addBasicPermissionsToAccount } from '../utils/permissionUtils.js';
 import { isPhoneVerified } from './verificationController.js';
 import { sendDemoAccountNotification } from '../utils/smsService.js';
 
+const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-development-key';
+
 const signToken = (id) => {
   return jwt.sign(
-    { id }, 
-    process.env.JWT_SECRET || 'super-secret-jwt-development-key', 
-    { expiresIn: process.env.JWT_EXPIRES_IN || '1d' }
+    { id },
+    JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
 };
 

@@ -2,11 +2,11 @@ import express from 'express';
 import * as adminController from '../controllers/adminController.js';
 import * as planController from '../controllers/planController.js';
 import { isAuthenticated, restrictTo } from '../middleware/authMiddleware.js';
-
+import { apiLimiter, strictLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
 
-router.use(isAuthenticated, restrictTo('ADMIN'));
+router.use(apiLimiter, isAuthenticated, restrictTo('ADMIN'));
 
 router.route('/accounts')
   .get(adminController.getAllAccounts)
@@ -42,7 +42,7 @@ router.get('/demo-accounts', adminController.getAllDemoAccounts);
 router.post('/demo-accounts/:id/approve', adminController.approveDemoAccount);
 router.post('/demo-accounts/:id/reject', adminController.rejectDemoAccount);
 
-// 🔐 IMPERSONATİON — İşletme hesabına admin girişi
-router.post('/accounts/:id/impersonate', adminController.impersonateAccount);
+// 🔐 IMPERSONATİON — İşletme hesabına admin girişi (saatte max 10 istek)
+router.post('/accounts/:id/impersonate', strictLimiter, adminController.impersonateAccount);
 
 export default router; 

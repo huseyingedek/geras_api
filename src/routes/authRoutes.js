@@ -2,14 +2,15 @@ import express from 'express';
 import * as authController from '../controllers/authController.js';
 import * as adminController from '../controllers/adminController.js';
 import * as verificationController from '../controllers/verificationController.js';
-import { isAuthenticated, preventImpersonation } from '../middleware/authMiddleware.js';
+import { isAuthenticated, restrictTo, preventImpersonation } from '../middleware/authMiddleware.js';
 import { authLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
 
 router.post('/login', authLimiter, authController.login);
 
-router.post('/create-admin', authLimiter, authController.createAdmin);
+// Sadece mevcut ADMIN kullanıcısı başka admin oluşturabilir
+router.post('/create-admin', isAuthenticated, restrictTo('ADMIN'), authController.createAdmin);
 
 // 📱 SMS DOĞRULAMA (Public)
 router.post('/send-verification-code', authLimiter, verificationController.sendVerificationCode);
