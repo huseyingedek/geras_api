@@ -816,9 +816,6 @@ export const getAllAppointments = async (req, res) => {
       })
     ]);
 
-    console.log('  - Bulunan randevu sayısı:', total);
-    console.log('  - Döndürülen randevu sayısı:', appointments.length);
-
     // Response'a filtreleme bilgilerini ekle
     const response = {
       success: true,

@@ -192,6 +192,12 @@ Randevu, satış, müşteri, personel, seans, raporlama ve taksit gibi modüller
 ### Profil Güncelleme
 📍 Nerede: **Sol Menü > Ayarlar > Profil Bilgileri** veya sağ üst köşedeki profil ikonu
 
+### Dark Mod (Karanlık Tema)
+📍 Nerede: Sağ üst köşedeki **tema ikonu** (güneş/ay simgesi) tıklanarak açılıp kapatılır.
+- Dark mod (karanlık tema) ve Light mod (aydınlık tema) arasında geçiş yapılabilir.
+- Tercih tarayıcıda saklanır; bir sonraki girişte de aynı tema aktif kalır.
+- Gece kullanım için göz yorgunluğunu azaltmak amacıyla dark mod önerilir.
+
 ---
 
 ## ABONELIK VE PLAN
@@ -237,6 +243,12 @@ C: **Sol Menü > Personel > Yeni Personel** yolunu izleyin. Personele giriş hes
 
 S: Personelin yetkilerini nasıl kısıtlarım?
 C: **Sol Menü > Personel > Personel Detayı > Yetkiler** sayfasından hangi modülleri görebileceğini ve hangi işlemleri yapabileceğini tek tek ayarlayabilirsiniz.
+
+S: Dark mod var mı? Karanlık tema nasıl açılır?
+C: Evet, dark mod mevcut. Sağ üst köşedeki **güneş/ay simgesine** tıklayarak dark mod ile light mod arasında geçiş yapabilirsiniz. Tercihleriniz otomatik olarak kaydedilir.
+
+S: Temayı nasıl değiştirebilirim?
+C: Sağ üst köşedeki tema ikonu (güneş veya ay simgesi) ile aydınlık ve karanlık tema arasında tek tıkla geçiş yapabilirsiniz.
 `;
 
 /**
