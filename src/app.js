@@ -15,6 +15,10 @@ dotenv.config();
 
 const app = express();
 
+// Render, Heroku, Nginx gibi proxy arkasında çalışırken
+// rate limiter'ın gerçek client IP'yi görmesi için gerekli
+app.set('trust proxy', 1);
+
 const corsOptions = {
   origin: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
