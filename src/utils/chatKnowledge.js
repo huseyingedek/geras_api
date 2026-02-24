@@ -44,11 +44,39 @@ Randevu, satış, müşteri, personel, seans, raporlama ve taksit gibi modüller
 ---
 
 ## SATIŞ MODÜLÜ
-### Satış Oluşturma
+### Tekli Satış Oluşturma
 📍 Nerede: **Sol Menü > Satışlar > Yeni Satış**
 - Müşteri ve hizmet seçilir.
 - Toplam tutar ve ödeme yöntemi girilir.
 - İstenirse aynı anda randevu da oluşturulabilir.
+
+### Paket Satış (Çoklu Hizmet) Oluşturma
+📍 Nerede: **Sol Menü > Satışlar > Yeni Paket Satış**
+- Tek işlemde birden fazla hizmet birlikte satılabilir.
+- Örnek: 10 seans lazer + 6 seans cilt bakımı + 1 adet protez tırnak tek satışta.
+- Her hizmet kendi seansını bağımsız takip eder. (lazer ayrı, cilt bakımı ayrı)
+- Seanssız ve seanslı hizmetler aynı pakette birlikte olabilir.
+- Paket toplam tutarı taksite bölünebilir (tek taksit planı).
+- Satış listesinde "Paket" etiketi ile gösterilir.
+
+### Paket İçinden Seans Kullanma
+📍 Nerede: **Sol Menü > Satışlar > Satış Detayı > Kalemler > Seans Kullan**
+- Paketteki her hizmet için ayrı "Seans Kullan" butonu vardır.
+- Cilt bakımından seans kullanmak lazerin seansını etkilemez.
+
+### Paket Satışı Düzenleme
+📍 Nerede: **Sol Menü > Satışlar > Satış Detayı > Düzenle**
+- Not, tarih, referans değiştirilebilir.
+- Pakete yeni hizmet eklenebilir: **Satış Detayı > Kalem Ekle**
+- Kullanılmamış kalem paketten çıkarılabilir: **Satış Detayı > Kalemi Kaldır**
+- Kalem fiyatı ve seans sayısı değiştirilebilir: **Satış Detayı > Kalemi Düzenle**
+- Paket satışlar 7 gün içinde düzenlenebilir; tekli satışlar 2 gün.
+
+### Randevu Açarken Paket Satış Seçimi
+- Randevu açılırken müşterinin satışı seçilir.
+- Paket satış seçilirse içindeki hizmetlerden hangisi için randevu açıldığı belirtilir.
+- Örnek: Aynı paketten cilt bakımına ayrı gün, lazere ayrı gün randevu açılabilir.
+- Her hizmet kendi kalan seans limitini aşan randevu açılmasına izin vermez.
 
 ### Ödeme Yöntemleri
 - Nakit
@@ -120,10 +148,12 @@ Randevu, satış, müşteri, personel, seans, raporlama ve taksit gibi modüller
 ### Seans Nedir?
 - Seans bazlı hizmetlerde (örn. 10 seanslık lazer paketi) her kullanım bir seans düşer.
 - Satış oluşturulunca toplam seans sayısı belirlenir.
+- Paket satışlarda her hizmet kendi seans sayısını bağımsız takip eder.
 
 ### Seans Düşme
-📍 Otomatik: Randevu tamamlandığında otomatik seans düşer.
+📍 Otomatik: Randevu tamamlandığında ilgili hizmetin seansı otomatik düşer.
 📍 Manuel: **Sol Menü > Satışlar > Satış Detayı > Seans Düş**
+- Paket satışlarda hangi hizmetten seans düşeceği seçilir.
 - Kalan seans sayısı her zaman satış detayında görülür.
 
 ### Seans Ekleme
@@ -243,6 +273,24 @@ C: **Sol Menü > Personel > Yeni Personel** yolunu izleyin. Personele giriş hes
 
 S: Personelin yetkilerini nasıl kısıtlarım?
 C: **Sol Menü > Personel > Personel Detayı > Yetkiler** sayfasından hangi modülleri görebileceğini ve hangi işlemleri yapabileceğini tek tek ayarlayabilirsiniz.
+
+S: Birden fazla hizmeti tek satışta yapabilir miyim?
+C: Evet. **Sol Menü > Satışlar > Yeni Paket Satış** ile birden fazla hizmeti tek satışta birleştirebilirsiniz. Örneğin 10 seans lazer + 6 seans cilt bakımı + protez tırnak tek pakette satılabilir. Her hizmet seansını bağımsız takip eder.
+
+S: Paket satışta her hizmetin seansını ayrı takip edebilir miyim?
+C: Evet. Paket satışta her hizmet (örn. lazer, cilt bakımı) kendi seansını bağımsız tutar. Cilt bakımından seans kullanmak lazer seansını etkilemez. Detay için **Sol Menü > Satışlar > Satış Detayı > Kalemler** bölümünü inceleyin.
+
+S: Paket satışı taksitlendirebilir miyim?
+C: Evet. Paket satışın toplam tutarı **Sol Menü > Satışlar > Satış Detayı > Taksit Planı Oluştur** yolunu izleyerek tek plan altında taksitlendirilebilir.
+
+S: Paket satışa sonradan hizmet ekleyebilir miyim?
+C: Evet. **Sol Menü > Satışlar > Satış Detayı > Kalem Ekle** ile pakete yeni hizmet eklenebilir. Satış 7 gün içinde düzenlenebilir.
+
+S: Paket içindeki bir hizmeti kaldırabilir miyim?
+C: Evet, ama yalnızca o hizmetten hiç seans kullanılmamışsa. **Sol Menü > Satışlar > Satış Detayı > Kalemi Kaldır** ile silebilirsiniz.
+
+S: Paket satışta randevu nasıl açarım?
+C: Randevu oluştururken müşterinin paket satışını seçin. Ardından paketin hangi hizmeti için randevu açtığınızı belirtin. Her hizmet için ayrı gün/saat seçilebilir.
 
 S: Dark mod var mı? Karanlık tema nasıl açılır?
 C: Evet, dark mod mevcut. Sağ üst köşedeki **güneş/ay simgesine** tıklayarak dark mod ile light mod arasında geçiş yapabilirsiniz. Tercihleriniz otomatik olarak kaydedilir.
