@@ -287,13 +287,22 @@ const updateProfile = async (req, res, next) => {
   try {
     const { accountId, id: userId } = req.user;
 
-    // İşletme alanları
-    const { businessName, contactPerson, businessEmail, businessPhone } = req.body;
-    // Kullanıcı alanları
-    const { username, userEmail, userPhone } = req.body;
+    // Hem nested ({ business: {...}, user: {...} }) hem flat format desteklenir
+    const bizSrc  = req.body.business || req.body;
+    const userSrc = req.body.user     || req.body;
 
-    const hasBusinessUpdate = businessName || contactPerson !== undefined || businessEmail !== undefined || businessPhone !== undefined;
-    const hasUserUpdate     = username || userEmail !== undefined || userPhone !== undefined;
+    const businessName   = bizSrc.businessName;
+    const contactPerson  = bizSrc.contactPerson;
+    // email/phone hem prefixli hem plain kabul edilir
+    const businessEmail  = bizSrc.businessEmail !== undefined ? bizSrc.businessEmail : bizSrc.email;
+    const businessPhone  = bizSrc.businessPhone !== undefined ? bizSrc.businessPhone : bizSrc.phone;
+
+    const username  = userSrc.username;
+    const userEmail = userSrc.userEmail !== undefined ? userSrc.userEmail : userSrc.email;
+    const userPhone = userSrc.userPhone !== undefined ? userSrc.userPhone : userSrc.phone;
+
+    const hasBusinessUpdate = businessName !== undefined || contactPerson !== undefined || businessEmail !== undefined || businessPhone !== undefined;
+    const hasUserUpdate     = username !== undefined || userEmail !== undefined || userPhone !== undefined;
 
     if (!hasBusinessUpdate && !hasUserUpdate) {
       return next(new AppError('Güncellenecek en az bir alan gönderilmelidir', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
