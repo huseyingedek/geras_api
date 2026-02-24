@@ -15,6 +15,16 @@ router.route('/with-appointment')
     salesController.createSaleWithAppointment
   );
 
+// Paket satış (çoklu hizmet) — static route'lar /:id'den önce tanımlanmalı
+router.route('/package')
+  .post(checkPermission('sales', 'create'), salesController.createPackageSale);
+
+router.route('/items/:itemId/use-session')
+  .patch(checkPermission('sales', 'create'), salesController.useSaleItemSession);
+
+router.route('/items/:itemId')
+  .patch(checkPermission('sales', 'update'), salesController.updateSaleItem);
+
 router.route('/')
   .get(checkPermission('sales', 'view'), salesController.getAllSales)
   .post(checkPermission('sales', 'create'), salesController.createSale);
@@ -61,5 +71,13 @@ router.route('/:id/sessions')
   
 router.route('/:id/add-sessions')
   .put(checkPermission('sales', 'update'), salesController.addSessionsToSale);
+
+// Satış kalemleri (tek hizmet veya paket)
+router.route('/:id/items')
+  .get(checkPermission('sales', 'view'),   salesController.getSaleItems)
+  .post(checkPermission('sales', 'create'), salesController.addSaleItem);
+
+router.route('/:id/items/:itemId')
+  .delete(checkPermission('sales', 'delete'), salesController.removeSaleItem);
 
 export default router; 

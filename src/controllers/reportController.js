@@ -595,7 +595,7 @@ export const debugPayments = async (req, res) => {
         amount: amount,
         method: p.paymentMethod,
         client: `${p.sale.client.firstName} ${p.sale.client.lastName}`,
-        service: p.sale.service.serviceName
+        service: p.sale.service?.serviceName || (p.sale.isPackage ? 'Paket Satış' : 'Bilinmiyor')
       });
     });
 

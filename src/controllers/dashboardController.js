@@ -406,10 +406,12 @@ export const getServiceSalesReport = async (req, res) => {
       prisma.sales.findMany({
         where: salesWhereClause,
         include: {
-          service: {
+          service: { select: { id: true, serviceName: true } },
+          saleItems: {
             select: {
-              id: true,
-              serviceName: true
+              serviceId: true,
+              unitPrice: true,
+              service: { select: { id: true, serviceName: true } }
             }
           }
         }
@@ -421,10 +423,12 @@ export const getServiceSalesReport = async (req, res) => {
         include: {
           sale: {
             include: {
-              service: {
+              service: { select: { id: true, serviceName: true } },
+              saleItems: {
                 select: {
-                  id: true,
-                  serviceName: true
+                  serviceId: true,
+                  unitPrice: true,
+                  service: { select: { id: true, serviceName: true } }
                 }
               }
             }
@@ -441,22 +445,29 @@ export const getServiceSalesReport = async (req, res) => {
 
     // 1. Önce satışları işle (fatura tutarı için)
     sales.forEach(sale => {
-      const serviceId = sale.serviceId;
-      const serviceName = sale.service.serviceName;
       const saleAmount = parseFloat(sale.totalAmount);
-      
-      if (!serviceStats[serviceId]) {
-        serviceStats[serviceId] = {
-          serviceId: serviceId,
-          serviceName: serviceName,
-          count: 0,
-          invoicedAmount: 0,  // Fatura tutarı (ödenmemiş dahil)
-          paidAmount: 0       // Kasaya giren (sadece COMPLETED ödemeler)
-        };
-      }
 
-      serviceStats[serviceId].count += 1;
-      serviceStats[serviceId].invoicedAmount += saleAmount;
+      if (sale.isPackage && sale.saleItems?.length > 0) {
+        // Paket satış: her kalemi ayrı hizmet olarak say
+        sale.saleItems.forEach(item => {
+          const serviceId = item.serviceId;
+          const serviceName = item.service?.serviceName || 'Paket Hizmet';
+          const itemShare = saleAmount / sale.saleItems.length;
+          if (!serviceStats[serviceId]) {
+            serviceStats[serviceId] = { serviceId, serviceName, count: 0, invoicedAmount: 0, paidAmount: 0 };
+          }
+          serviceStats[serviceId].count += 1;
+          serviceStats[serviceId].invoicedAmount += itemShare;
+        });
+      } else {
+        const serviceId = sale.serviceId || 'unknown';
+        const serviceName = sale.service?.serviceName || 'Bilinmeyen Hizmet';
+        if (!serviceStats[serviceId]) {
+          serviceStats[serviceId] = { serviceId, serviceName, count: 0, invoicedAmount: 0, paidAmount: 0 };
+        }
+        serviceStats[serviceId].count += 1;
+        serviceStats[serviceId].invoicedAmount += saleAmount;
+      }
 
       totalInvoiced += saleAmount;
       totalCount += 1;
@@ -465,20 +476,28 @@ export const getServiceSalesReport = async (req, res) => {
     // 2. Ödemeleri işle — sadece COMPLETED (kasaya giren gerçek para)
     payments.forEach(payment => {
       const sale = payment.sale;
-      const serviceId = sale.serviceId;
       const paidAmount = parseFloat(payment.amountPaid);
-      
-      if (!serviceStats[serviceId]) {
-        serviceStats[serviceId] = {
-          serviceId: serviceId,
-          serviceName: sale.service.serviceName,
-          count: 0,
-          invoicedAmount: 0,
-          paidAmount: 0
-        };
+
+      if (sale.isPackage && sale.saleItems?.length > 0) {
+        // Paket satış: ödemeyi eşit böl
+        const perItemPaid = paidAmount / sale.saleItems.length;
+        sale.saleItems.forEach(item => {
+          const serviceId = item.serviceId;
+          const serviceName = item.service?.serviceName || 'Paket Hizmet';
+          if (!serviceStats[serviceId]) {
+            serviceStats[serviceId] = { serviceId, serviceName, count: 0, invoicedAmount: 0, paidAmount: 0 };
+          }
+          serviceStats[serviceId].paidAmount += perItemPaid;
+        });
+      } else {
+        const serviceId = sale.serviceId || 'unknown';
+        const serviceName = sale.service?.serviceName || 'Bilinmeyen Hizmet';
+        if (!serviceStats[serviceId]) {
+          serviceStats[serviceId] = { serviceId, serviceName, count: 0, invoicedAmount: 0, paidAmount: 0 };
+        }
+        serviceStats[serviceId].paidAmount += paidAmount;
       }
 
-      serviceStats[serviceId].paidAmount += paidAmount;
       totalCashReceived += paidAmount;
     });
 

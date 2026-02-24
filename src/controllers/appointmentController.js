@@ -349,6 +349,7 @@ export const createAppointment = async (req, res) => {
     const { accountId } = req.user;
     const { 
       saleId,
+      saleItemId,
       staffId,
       appointmentDate,
       notes
@@ -385,27 +386,59 @@ export const createAppointment = async (req, res) => {
       });
     }
 
-    // ✅ SEANS SAYISI KONTROLÜ
-    if (sale.remainingSessions <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Bu satışın kalan seansı yoktur. Randevu oluşturulamaz.'
-      });
-    }
-
-    // ✅ MEVCUT PLANLANMIŞ RANDEVU SAYISI KONTROLÜ (sadece PLANNED olanlar sayılır)
-    const existingPlannedAppointments = await prisma.appointments.count({
-      where: {
-        saleId: saleId,
-        status: 'PLANNED' // Sadece planlanmış randevular sayılır
+    // Paket satış için saleItemId zorunlu
+    let saleItem = null;
+    if (sale.isPackage) {
+      if (!saleItemId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Paket satışlarda hangi hizmet için randevu açıldığını belirtmelisiniz (saleItemId).'
+        });
       }
-    });
-
-    if (existingPlannedAppointments >= sale.remainingSessions) {
-      return res.status(400).json({
-        success: false,
-        message: `Bu satış için maksimum ${sale.remainingSessions} randevu oluşturulabilir. Mevcut planlanmış randevu sayısı: ${existingPlannedAppointments}`
+      saleItem = await prisma.saleItems.findFirst({
+        where: { id: parseInt(saleItemId), saleId: sale.id },
+        include: { service: true }
       });
+      if (!saleItem) {
+        return res.status(404).json({ success: false, message: 'Paket kalemi bulunamadı.' });
+      }
+
+      // Kalem bazında seans ve planlanmış randevu kontrolü
+      if (saleItem.remainingSessions <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: `${saleItem.service.serviceName} için kalan seans yok.`
+        });
+      }
+
+      const plannedForItem = await prisma.appointments.count({
+        where: { saleItemId: parseInt(saleItemId), status: 'PLANNED' }
+      });
+      if (plannedForItem >= saleItem.remainingSessions) {
+        return res.status(400).json({
+          success: false,
+          message: `${saleItem.service.serviceName} için tüm kalan seanslar zaten randevuya alınmış (${plannedForItem}/${saleItem.remainingSessions}).`
+        });
+      }
+    } else {
+      // Tekil satış — eski kontrol
+      if (sale.remainingSessions <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Bu satışın kalan seansı yoktur. Randevu oluşturulamaz.'
+        });
+      }
+
+      const existingPlannedAppointments = await prisma.appointments.count({
+        where: { saleId: saleId, status: 'PLANNED' }
+      });
+
+      if (existingPlannedAppointments >= sale.remainingSessions) {
+        return res.status(400).json({
+          success: false,
+          message: `Bu satış için maksimum ${sale.remainingSessions} randevu oluşturulabilir. Mevcut planlanmış randevu sayısı: ${existingPlannedAppointments}`
+        });
+      }
     }
 
     const staff = await prisma.staff.findFirst({
@@ -428,9 +461,9 @@ export const createAppointment = async (req, res) => {
 
     // ✅ ÇAKIŞMA VE ÇALIŞMA SAATİ KONTROLÜ
     const appointmentStart = new Date(appointmentDate);
-    
-    
-    const serviceDuration = sale.service.durationMinutes || 60;
+
+    // Süreyi paket satışta saleItem'ın servisinden, tekilde sale.service'den al
+    const serviceDuration = (saleItem?.service?.durationMinutes) || sale.service?.durationMinutes || 60;
     const appointmentEnd = new Date(appointmentStart.getTime() + (serviceDuration * 60000));
     const dayOfWeek = appointmentStart.getDay();
 
@@ -525,17 +558,21 @@ export const createAppointment = async (req, res) => {
     const shouldMarkAsSent = hoursUntilReminder <= 2;
 
     // ✅ RANDEVU OLUŞTUR (SEANS AZALTMADAN)
+    // Paket satışta serviceId ve saleItemId saleItem'dan gelir
+    const appointmentServiceId = saleItem ? saleItem.serviceId : sale.serviceId;
+
     const appointment = await prisma.appointments.create({
       data: {
-        accountId: accountId,
-        customerName: `${sale.client.firstName} ${sale.client.lastName}`,
-        clientId: sale.clientId,
-        serviceId: sale.serviceId,
-        staffId: staffId,
-        saleId: saleId,
+        accountId:      accountId,
+        customerName:   `${sale.client.firstName} ${sale.client.lastName}`,
+        clientId:       sale.clientId,
+        serviceId:      appointmentServiceId,
+        staffId:        staffId,
+        saleId:         saleId,
+        saleItemId:     saleItem ? saleItem.id : null,
         appointmentDate: new Date(appointmentDate).toISOString(),
-        notes: notes || null,
-        reminderSentAt: shouldMarkAsSent ? new Date() : null // Hatırlatma çok yakınsa doldur
+        notes:          notes || null,
+        reminderSentAt: shouldMarkAsSent ? new Date() : null
       },
       include: {
         client: {
@@ -588,9 +625,9 @@ export const createAppointment = async (req, res) => {
         if (account?.smsEnabled) {
           const smsData = {
             customerName: `${appointment.client.firstName} ${appointment.client.lastName}`,
-            serviceName: appointment.service.serviceName,
+            serviceName: saleItem?.service?.serviceName || appointment.service?.serviceName || 'Paket Satış',
             appointmentDate: appointmentDate,
-            staffName: appointment.staff.fullName,
+            staffName: appointment.staff?.fullName || '',
             businessName: account?.businessName || 'Bizim Işletme'
           };
 
@@ -870,13 +907,15 @@ export const updateAppointment = async (req, res) => {
       include: {
         sale: {
           include: {
-            service: {
-              select: {
-                isSessionBased: true
-              }
-            }
+            service: { select: { isSessionBased: true } }
           }
-        }
+        },
+        saleItem: {
+          include: {
+            service: { select: { id: true, serviceName: true, isSessionBased: true } }
+          }
+        },
+        service: { select: { serviceName: true, isSessionBased: true } }
       }
     });
 
@@ -1034,43 +1073,60 @@ export const updateAppointment = async (req, res) => {
       // 2. Seans değişikliklerini uygula
       if (sessionChanges) {
         if (sessionChanges.type === 'restore') {
-          // Seansı geri yükle
+          // Sales.remainingSessions geri yükle
           await tx.sales.update({
             where: { id: existingAppointment.sale.id },
-            data: { 
-              remainingSessions: existingAppointment.sale.remainingSessions + 1 
-            }
+            data: { remainingSessions: existingAppointment.sale.remainingSessions + 1 }
           });
-          
-          // İlgili session kaydını sil (sadece session-based hizmetler için)
-          if (existingAppointment.sale.service.isSessionBased) {
+
+          // Paket satışta SaleItem.remainingSessions da geri yükle
+          if (existingAppointment.saleItemId) {
+            await tx.saleItems.update({
+              where: { id: existingAppointment.saleItemId },
+              data: { remainingSessions: { increment: 1 } }
+            });
+          }
+
+          // İlgili session kaydını sil
+          if (existingAppointment.sale.isPackage || existingAppointment.sale.service?.isSessionBased) {
             await tx.sessions.deleteMany({
               where: {
-                saleId: existingAppointment.sale.id,
-                staffId: existingAppointment.staffId,
-                status: 'COMPLETED'
+                saleId:    existingAppointment.sale.id,
+                saleItemId: existingAppointment.saleItemId || undefined,
+                staffId:   existingAppointment.staffId,
+                status:    'COMPLETED'
               }
             });
           }
-          
+
         } else if (sessionChanges.type === 'decrease') {
-          // Seansı azalt
+          // Sales.remainingSessions azalt
           await tx.sales.update({
             where: { id: existingAppointment.sale.id },
-            data: { 
-              remainingSessions: existingAppointment.sale.remainingSessions - 1 
-            }
+            data: { remainingSessions: existingAppointment.sale.remainingSessions - 1 }
           });
-          
-          // Session kaydı oluştur (sadece session-based hizmetler için)
-          if (existingAppointment.sale.service.isSessionBased) {
+
+          // Paket satışta SaleItem.remainingSessions da azalt
+          if (existingAppointment.saleItemId) {
+            await tx.saleItems.update({
+              where: { id: existingAppointment.saleItemId },
+              data: { remainingSessions: { decrement: 1 } }
+            });
+          }
+
+          // Session kaydı oluştur
+          if (existingAppointment.sale.isPackage || existingAppointment.sale.service?.isSessionBased) {
+            const sessionServiceName = existingAppointment.saleItem?.service?.serviceName
+              || existingAppointment.service?.serviceName
+              || 'Hizmet';
             await tx.sessions.create({
               data: {
-                saleId: existingAppointment.sale.id,
-                staffId: existingAppointment.staffId,
+                saleId:     existingAppointment.sale.id,
+                saleItemId: existingAppointment.saleItemId || null,
+                staffId:    existingAppointment.staffId,
                 sessionDate: new Date(),
-                status: 'COMPLETED',
-                notes: `${existingAppointment.service?.serviceName || 'Hizmet'} tamamlandı`
+                status:     'COMPLETED',
+                notes:      `${sessionServiceName} tamamlandı`
               }
             });
           }
@@ -1092,7 +1148,7 @@ export const updateAppointment = async (req, res) => {
         if (account?.smsEnabled) {
           const smsData = {
             customerName: `${result.client.firstName} ${result.client.lastName}`,
-            serviceName: result.service.serviceName,
+            serviceName: result.service?.serviceName || 'Paket Satış',
             appointmentDate: result.appointmentDate,
             businessName: account.businessName
           };
@@ -1155,14 +1211,10 @@ export const deleteAppointment = async (req, res) => {
       include: {
         sale: {
           include: {
-            service: {
-              select: {
-                isSessionBased: true,
-                serviceName: true
-              }
-            }
+            service: { select: { isSessionBased: true, serviceName: true } }
           }
-        }
+        },
+        saleItem: { select: { id: true, remainingSessions: true } }
       }
     });
 
@@ -1202,21 +1254,28 @@ export const deleteAppointment = async (req, res) => {
           }
         });
 
-        // 2. Seansı geri yükle
+        // 2. Sales.remainingSessions geri yükle
         await tx.sales.update({
           where: { id: existingAppointment.sale.id },
-          data: { 
-            remainingSessions: existingAppointment.sale.remainingSessions + 1 
-          }
+          data: { remainingSessions: existingAppointment.sale.remainingSessions + 1 }
         });
 
-        // 3. İlgili session kaydını sil (sadece session-based hizmetler için)
-        if (existingAppointment.sale.service.isSessionBased) {
+        // Paket satışta SaleItem.remainingSessions da geri yükle
+        if (existingAppointment.saleItemId) {
+          await tx.saleItems.update({
+            where: { id: existingAppointment.saleItemId },
+            data: { remainingSessions: { increment: 1 } }
+          });
+        }
+
+        // 3. İlgili session kaydını sil
+        if (existingAppointment.sale.isPackage || existingAppointment.sale.service?.isSessionBased) {
           await tx.sessions.deleteMany({
             where: {
-              saleId: existingAppointment.sale.id,
-              staffId: existingAppointment.staffId,
-              status: 'COMPLETED'
+              saleId:    existingAppointment.sale.id,
+              saleItemId: existingAppointment.saleItemId || undefined,
+              staffId:   existingAppointment.staffId,
+              status:    'COMPLETED'
             }
           });
         }
@@ -2113,10 +2172,13 @@ export const completeAppointment = async (req, res) => {
         sale: {
           include: {
             payments: {
-              where: {
-                status: 'COMPLETED'
-              }
+              where: { status: 'COMPLETED' }
             }
+          }
+        },
+        saleItem: {
+          include: {
+            service: { select: { id: true, serviceName: true, isSessionBased: true } }
           }
         }
       }
@@ -2211,37 +2273,45 @@ export const completeAppointment = async (req, res) => {
       let updatedSale = null;
       let createdSession = null;
 
-      // 2. Eğer satış varsa seans düşür + session oluştur (session-based kontrolü kaldırıldı)
+      // 2. Eğer satış varsa seans düşür + session oluştur
       if (appointment.sale) {
-        
+
         if (appointment.sale.remainingSessions > 0) {
-          
-          // Seans düşür
+
+          // Sales.remainingSessions düşür (toplam sayaç)
           updatedSale = await tx.sales.update({
-            where: {
-              id: appointment.sale.id
-            },
-            data: {
-              remainingSessions: appointment.sale.remainingSessions - 1
-            }
+            where: { id: appointment.sale.id },
+            data: { remainingSessions: appointment.sale.remainingSessions - 1 }
           });
 
-          // Session oluştur (sadece session-based hizmetler için)
-          if (appointment.service.isSessionBased) {
+          // Paket satış ise SaleItem.remainingSessions da düşür
+          if (appointment.saleItemId && appointment.saleItem) {
+            await tx.saleItems.update({
+              where: { id: appointment.saleItemId },
+              data: { remainingSessions: { decrement: 1 } }
+            });
+          }
+
+          // Session kaydı oluştur
+          if (appointment.sale?.isPackage || appointment.service?.isSessionBased) {
+            const sessionServiceName = appointment.saleItem?.service?.serviceName
+              || appointment.service?.serviceName
+              || 'Hizmet';
             createdSession = await tx.sessions.create({
               data: {
-                saleId: appointment.sale.id,
-                staffId: appointment.staffId,
+                saleId:      appointment.sale.id,
+                saleItemId:  appointment.saleItemId || null,
+                staffId:     appointment.staffId,
                 sessionDate: completedAt ? new Date(completedAt) : new Date(),
-                status: 'COMPLETED',
-                notes: notes || `${appointment.service.serviceName} tamamlandı`
+                status:      'COMPLETED',
+                notes:       notes || `${sessionServiceName} tamamlandı`
               }
             });
           }
 
           sessionInfo = {
-            sessionCreated: !!createdSession,
-            sessionId: createdSession?.id,
+            sessionCreated:   !!createdSession,
+            sessionId:        createdSession?.id,
             remainingSessions: updatedSale.remainingSessions,
             isPackageCompleted: updatedSale.remainingSessions === 0
           };

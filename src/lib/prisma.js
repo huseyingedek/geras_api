@@ -17,7 +17,8 @@ const createPrismaClient = () => {
     datasources: {
       db: { url: databaseUrl },
     },
-    log: ['error'],
+    // Production'da log kapalı, development'ta sadece kritik hatalar
+    log: process.env.NODE_ENV === 'production' ? [] : ['warn'],
     errorFormat: 'minimal',
   });
 };

@@ -89,7 +89,7 @@ const getDateRange = (period) => {
 export const getAllSales = async (req, res) => {
   try {
     const { accountId } = req.user;
-    const { isDeleted, search, period, startDate, endDate, isPaid } = req.query;
+    const { isDeleted, search, period, startDate, endDate, isPaid, clientId } = req.query;
     
     const hasPageParam = req.query.page !== undefined;
     const page = parseInt(req.query.page) || 1;
@@ -97,7 +97,7 @@ export const getAllSales = async (req, res) => {
     const offset = (page - 1) * limit;
 
     // 🔒 PERFORMANS KORUMASI: Milyonlarca kayıt olduğu için en az 1 filtre zorunlu
-    const hasFilter = search || period || startDate || endDate || isDeleted || isPaid;
+    const hasFilter = search || period || startDate || endDate || isDeleted || isPaid || clientId;
     
     if (!hasFilter) {
       return res.json({
@@ -137,6 +137,11 @@ export const getAllSales = async (req, res) => {
     } else if (isDeleted === 'all') {
     } else {
       whereClause.isDeleted = false;
+    }
+
+    // Müşteri bazlı filtreleme (randevu formu satış seçimi için)
+    if (clientId) {
+      whereClause.clientId = parseInt(clientId);
     }
 
     // Tarih filtreleme
@@ -204,12 +209,26 @@ export const getAllSales = async (req, res) => {
         }
       });
       
-      // 2. Hizmet adı araması
+      // 2. Tek hizmetli satışlarda hizmet adı araması
       searchConditions.push({
         service: {
           serviceName: {
             contains: searchTerm,
             mode: 'insensitive'
+          }
+        }
+      });
+
+      // 3. Paket satışlarda hizmet adı araması (saleItems üzerinden)
+      searchConditions.push({
+        saleItems: {
+          some: {
+            service: {
+              serviceName: {
+                contains: searchTerm,
+                mode: 'insensitive'
+              }
+            }
           }
         }
       });
@@ -264,6 +283,26 @@ export const getAllSales = async (req, res) => {
             reference_type: true,
             reference_name: true
           }
+        },
+        saleItems: {
+          select: {
+            id: true,
+            serviceId: true,
+            sessionCount: true,
+            remainingSessions: true,
+            unitPrice: true,
+            notes: true,
+            service: {
+              select: {
+                id: true,
+                serviceName: true,
+                price: true,
+                isSessionBased: true,
+                sessionCount: true,
+                durationMinutes: true
+              }
+            }
+          }
         }
       },
       orderBy: {
@@ -310,20 +349,33 @@ export const getAllSales = async (req, res) => {
       }, 0);
       totalRevenue += saleRevenue;
       
-      // Seans bazlı satış sayısı
-      if (sale.service.isSessionBased) {
+      // Seans bazlı satış sayısı (paket satışlarda service null olabilir)
+      if (sale.isPackage || sale.service?.isSessionBased) {
         sessionBased += 1;
-        
-        // Aktif seans sayısı (kalan seans > 0)
         if (sale.remainingSessions > 0) {
           activeSessions += 1;
         }
       }
     });
 
+    // Her satış için frontend kolaylığı: displayServiceName
+    const enrichedSales = paginatedSales.map(sale => {
+      let displayServiceName = null;
+      if (!sale.isPackage) {
+        displayServiceName = sale.service?.serviceName || null;
+      } else if (sale.saleItems?.length === 1) {
+        displayServiceName = sale.saleItems[0].service?.serviceName || 'Paket Satış';
+      } else if (sale.saleItems?.length > 1) {
+        displayServiceName = `Paket (${sale.saleItems.length} hizmet)`;
+      } else {
+        displayServiceName = 'Paket Satış';
+      }
+      return { ...sale, displayServiceName };
+    });
+
     res.json({
       success: true,
-      data: paginatedSales,
+      data: enrichedSales,
       pagination: hasPageParam ? {
         // Liste görünümünde normal pagination
         page,
@@ -334,7 +386,7 @@ export const getAllSales = async (req, res) => {
       } : {
         // Dropdown görünümünde pagination yok
         total: totalSales,
-        returned: paginatedSales.length,
+        returned: enrichedSales.length,
         hasPageParam: false
       },
       summary: {
@@ -482,11 +534,12 @@ export const createSale = async (req, res) => {
         accountId: accountId,
         clientId: clientId,
         serviceId: serviceId,
+        isPackage: false,
         saleDate: finalSaleDate,
         totalAmount: finalTotalAmount,
         remainingSessions: finalSessions,
         notes: notes || null,
-        reference_id: reference_id || null  // ✅ Referans eklendi (opsiyonel)
+        reference_id: reference_id || null
       },
       include: {
         client: {
@@ -760,6 +813,7 @@ export const createSaleWithAppointment = async (req, res) => {
           accountId: accountId,
           clientId: clientId,
           serviceId: serviceId,
+          isPackage: false,
           saleDate: finalSaleDate,
           totalAmount: finalTotalAmount,
           remainingSessions: finalSessions,
@@ -906,6 +960,27 @@ export const getSaleById = async (req, res) => {
             reference_name: true,
             notes: true
           }
+        },
+        saleItems: {
+          include: {
+            service: {
+              select: {
+                id: true,
+                serviceName: true,
+                description: true,
+                price: true,
+                isSessionBased: true,
+                sessionCount: true,
+                durationMinutes: true
+              }
+            },
+            sessions: {
+              orderBy: { sessionDate: 'desc' },
+              include: {
+                staff: { select: { id: true, fullName: true } }
+              }
+            }
+          }
         }
       }
     });
@@ -933,10 +1008,23 @@ export const getSaleById = async (req, res) => {
 
     const remainingDebt = Math.max(0, saleTotal - completedAmount);
 
+    // Frontend kolaylığı: displayServiceName
+    let displayServiceName = null;
+    if (!sale.isPackage) {
+      displayServiceName = sale.service?.serviceName || null;
+    } else if (sale.saleItems?.length === 1) {
+      displayServiceName = sale.saleItems[0].service?.serviceName || 'Paket Satış';
+    } else if (sale.saleItems?.length > 1) {
+      displayServiceName = `Paket (${sale.saleItems.length} hizmet)`;
+    } else {
+      displayServiceName = 'Paket Satış';
+    }
+
     res.json({
       success: true,
       data: {
         ...sale,
+        displayServiceName,
         paymentStatus: {
           totalAmount: saleTotal.toFixed(2),
           completedAmount: completedAmount.toFixed(2),
@@ -981,19 +1069,29 @@ export const updateSale = async (req, res) => {
       });
     }
 
-    // 🔒 2 GÜN SONRA GÜNCELLEME ENGELİ
-    const twoDaysAgo = new Date();
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-    twoDaysAgo.setHours(0, 0, 0, 0);
-    
+    // 🔒 GÜNCELLEME YAŞI ENGELİ
+    // Paket satışlar 7 gün, tekil satışlar 2 gün içinde güncellenebilir
+    const limitDays = existingSale.isPackage ? 7 : 2;
+    const limitDate = new Date();
+    limitDate.setDate(limitDate.getDate() - limitDays);
+    limitDate.setHours(0, 0, 0, 0);
+
     const saleDate = new Date(existingSale.saleDate);
     saleDate.setHours(0, 0, 0, 0);
-    
-    if (saleDate < twoDaysAgo) {
+
+    if (saleDate < limitDate) {
       return res.status(403).json({
         success: false,
-        message: 'Bu satış 2 günden eski olduğu için güncellenemez',
+        message: `Bu satış ${limitDays} günden eski olduğu için güncellenemez`,
         saleDate: existingSale.saleDate
+      });
+    }
+
+    // Paket satışta serviceId değiştirilemez
+    if (existingSale.isPackage && serviceId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Paket satışlarda hizmet değiştirilemez. Kalem düzenlemek için PATCH /api/sales/items/:itemId kullanın.'
       });
     }
 
@@ -1024,11 +1122,11 @@ export const updateSale = async (req, res) => {
     }
 
     const updateData = {
-      serviceId: serviceId || existingSale.serviceId,
+      serviceId: existingSale.isPackage ? null : (serviceId || existingSale.serviceId),
       totalAmount: totalAmount || existingSale.totalAmount,
       remainingSessions: remainingSessions !== undefined ? remainingSessions : existingSale.remainingSessions,
       notes: notes !== undefined ? notes : existingSale.notes,
-      reference_id: reference_id !== undefined ? reference_id : existingSale.reference_id  // ✅ Referans güncellenebilir
+      reference_id: reference_id !== undefined ? reference_id : existingSale.reference_id
     };
 
     const updatedSale = await prisma.sales.update({
@@ -1348,7 +1446,7 @@ export const getSaleSessions = async (req, res) => {
       data: {
         sessions: sale.sessions,
         remainingSessions: sale.remainingSessions,
-        isSessionBased: sale.service.isSessionBased
+        isSessionBased: sale.isPackage ? true : (sale.service?.isSessionBased ?? false)
       }
     });
   } catch (error) {
@@ -1385,7 +1483,14 @@ export const createSession = async (req, res) => {
       });
     }
 
-    if (!sale.service.isSessionBased) {
+    if (sale.isPackage) {
+      return res.status(400).json({
+        success: false,
+        message: 'Paket satışlarda seans kullanmak için /api/sales/items/:itemId/use-session endpoint\'ini kullanın.'
+      });
+    }
+
+    if (!sale.service?.isSessionBased) {
       return res.status(400).json({
         success: false,
         message: 'Bu hizmet seans tabanlı değil'
@@ -1531,7 +1636,7 @@ export const addSessionsToSale = async (req, res) => {
 
     res.json({
       success: true,
-      message: `${additionalSessions} ${sale.service.isSessionBased ? 'seans' : 'adet'} başarıyla eklendi`,
+      message: `${additionalSessions} ${sale.isPackage || sale.service?.isSessionBased ? 'seans' : 'adet'} başarıyla eklendi`,
       data: updatedSale
     });
   } catch (error) {
@@ -2034,7 +2139,7 @@ export const createInstallmentPlan = async (req, res) => {
     if (smsReminderEnabled && sale.client.phone) {
       try {
         const clientName = `${sale.client.firstName} ${sale.client.lastName}`;
-        const serviceName = sale.service.serviceName;
+        const serviceName = sale.service?.serviceName || 'Paket Satış';
         const installmentLines = result
           .map(p => `  ${p.installmentNumber}. Taksit: ${parseFloat(p.amountPaid).toFixed(2)} TL — Vade: ${new Date(p.dueDate).toLocaleDateString('tr-TR')}`)
           .join('\n');
@@ -2320,5 +2425,563 @@ export const getPendingInstallments = async (req, res) => {
   } catch (error) {
     console.error('Bekleyen taksitler hatası:', error);
     res.status(500).json({ success: false, message: 'Bekleyen taksitler getirilemedi', error: error.message });
+  }
+};
+
+// ============================================================
+// PAKET SATIŞ (ÇOKLU HİZMET)
+// ============================================================
+
+/**
+ * POST /api/sales/package
+ * Birden fazla hizmet içeren paket satış oluştur.
+ *
+ * Body:
+ * {
+ *   clientId: number,
+ *   saleDate?: string,
+ *   notes?: string,
+ *   referenceId?: number,
+ *   isInstallment?: boolean,
+ *   installmentCount?: number,
+ *   items: [
+ *     { serviceId: number, sessionCount: number, unitPrice: number, notes?: string }
+ *   ],
+ *   payments?: [
+ *     { paymentMethod: string, amountPaid: number, paymentDate?: string, dueDate?: string, installmentNumber?: number }
+ *   ]
+ * }
+ */
+export const createPackageSale = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const {
+      clientId,
+      saleDate,
+      notes,
+      referenceId,
+      isInstallment = false,
+      installmentCount,
+      items,
+      payments = []
+    } = req.body;
+
+    // Validasyon
+    if (!clientId) {
+      return res.status(400).json({ success: false, message: 'Müşteri seçilmelidir.' });
+    }
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'En az bir hizmet eklemelisiniz.' });
+    }
+
+    // Her item'ı doğrula
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (!item.serviceId) {
+        return res.status(400).json({ success: false, message: `${i + 1}. hizmet için serviceId gereklidir.` });
+      }
+      if (!item.unitPrice && item.unitPrice !== 0) {
+        return res.status(400).json({ success: false, message: `${i + 1}. hizmet için birim fiyat gereklidir.` });
+      }
+      if (!item.sessionCount || item.sessionCount < 1) {
+        return res.status(400).json({ success: false, message: `${i + 1}. hizmet için seans sayısı en az 1 olmalıdır.` });
+      }
+    }
+
+    // Müşteri kontrolü
+    const client = await prisma.clients.findFirst({
+      where: { id: parseInt(clientId), accountId, isActive: true }
+    });
+    if (!client) {
+      return res.status(404).json({ success: false, message: 'Müşteri bulunamadı.' });
+    }
+
+    // Hizmet kontrolü (hepsi aynı işletmeye ait mi)
+    const serviceIds = [...new Set(items.map(i => parseInt(i.serviceId)))];
+    const services = await prisma.services.findMany({
+      where: { id: { in: serviceIds }, accountId, isActive: true }
+    });
+    if (services.length !== serviceIds.length) {
+      return res.status(404).json({ success: false, message: 'Bir veya daha fazla hizmet bulunamadı.' });
+    }
+
+    // Toplam tutarı hesapla (unitPrice = o hizmet için toplam fiyat, seans sayısıyla çarpılmaz)
+    const totalAmount = items.reduce((sum, item) => {
+      return sum + parseFloat(item.unitPrice);
+    }, 0);
+
+    // Toplam kalan seanslar (seanssız hizmetler 1 sayılır)
+    const totalRemainingSessions = items.reduce((sum, item) => {
+      return sum + parseInt(item.sessionCount);
+    }, 0);
+
+    const parsedSaleDate = parseLocalDate(saleDate);
+
+    // Transaction ile satış + kalemleri + ödemeleri oluştur
+    const result = await prisma.$transaction(async (tx) => {
+      // Ana satış kaydı (isPackage: true, serviceId: null)
+      const sale = await tx.sales.create({
+        data: {
+          accountId,
+          clientId: parseInt(clientId),
+          serviceId:          null,
+          isPackage:          true,
+          saleDate:           parsedSaleDate,
+          totalAmount:        totalAmount,
+          remainingSessions:  totalRemainingSessions,
+          notes:              notes || null,
+          reference_id:       referenceId ? parseInt(referenceId) : null,
+          isInstallment:      isInstallment,
+          installmentCount:   installmentCount ? parseInt(installmentCount) : null,
+          smsReminderEnabled: true
+        }
+      });
+
+      // SaleItems oluştur
+      const createdItems = await Promise.all(
+        items.map(item =>
+          tx.saleItems.create({
+            data: {
+              saleId:            sale.id,
+              serviceId:         parseInt(item.serviceId),
+              sessionCount:      parseInt(item.sessionCount),
+              remainingSessions: parseInt(item.sessionCount),
+              unitPrice:         parseFloat(item.unitPrice),
+              notes:             item.notes || null
+            }
+          })
+        )
+      );
+
+      // Ödemeler oluştur
+      let createdPayments = [];
+      if (payments.length > 0) {
+        createdPayments = await Promise.all(
+          payments.map(p =>
+            tx.payments.create({
+              data: {
+                saleId:            sale.id,
+                paymentMethod:     p.paymentMethod || 'CASH',
+                amountPaid:        parseFloat(p.amountPaid),
+                status:            'COMPLETED',
+                paymentDate:       p.paymentDate ? new Date(p.paymentDate) : new Date(),
+                dueDate:           p.dueDate ? new Date(p.dueDate) : null,
+                installmentNumber: p.installmentNumber || null,
+                notes:             p.notes || null
+              }
+            })
+          )
+        );
+      }
+
+      return { sale, items: createdItems, payments: createdPayments };
+    });
+
+    // Detaylı response için tekrar çek
+    const fullSale = await prisma.sales.findUnique({
+      where: { id: result.sale.id },
+      include: {
+        client:    { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
+        saleItems: {
+          include: {
+            service: { select: { id: true, serviceName: true, isSessionBased: true, durationMinutes: true } }
+          }
+        },
+        payments: {
+          where: { status: 'COMPLETED' },
+          select: { id: true, amountPaid: true, paymentMethod: true, paymentDate: true }
+        }
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Paket satış başarıyla oluşturuldu.',
+      data: {
+        ...fullSale,
+        totalRemainingSessions,
+        paidAmount:     result.payments.reduce((s, p) => s + parseFloat(p.amountPaid), 0),
+        remainingAmount: totalAmount - result.payments.reduce((s, p) => s + parseFloat(p.amountPaid), 0)
+      }
+    });
+  } catch (error) {
+    console.error('Paket satış oluşturma hatası:', error);
+    res.status(500).json({ success: false, message: 'Paket satış oluşturulamadı.', error: error.message });
+  }
+};
+
+/**
+ * GET /api/sales/:id/items
+ * Bir satışın kalemlerini getir (tek veya paket satış için)
+ */
+export const getSaleItems = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const saleId = parseInt(req.params.id);
+
+    const sale = await prisma.sales.findFirst({
+      where: { id: saleId, accountId, isDeleted: false },
+      include: {
+        service: {
+          select: { id: true, serviceName: true, isSessionBased: true, sessionCount: true, price: true, durationMinutes: true }
+        },
+        saleItems: {
+          include: {
+            service: { select: { id: true, serviceName: true, isSessionBased: true, sessionCount: true, price: true, durationMinutes: true } },
+            sessions: {
+              orderBy: { sessionDate: 'desc' },
+              select: { id: true, sessionDate: true, status: true, notes: true, staff: { select: { id: true, fullName: true } } }
+            }
+          }
+        }
+      }
+    });
+
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Satış bulunamadı.' });
+    }
+
+    // Tek hizmetli satış için geriye dönük uyumlu yanıt
+    if (!sale.isPackage) {
+      return res.json({
+        success: true,
+        data: {
+          isPackage: false,
+          service:   sale.service,
+          remainingSessions: sale.remainingSessions,
+          items: []
+        }
+      });
+    }
+
+    // Paket satış için items listesi
+    const totalRemaining = sale.saleItems.reduce((s, i) => s + i.remainingSessions, 0);
+    const totalSessions  = sale.saleItems.reduce((s, i) => s + i.sessionCount, 0);
+
+    res.json({
+      success: true,
+      data: {
+        isPackage:          true,
+        totalRemainingSessions: totalRemaining,
+        totalSessionCount:      totalSessions,
+        items: sale.saleItems.map(item => ({
+          id:                item.id,
+          serviceId:         item.serviceId,
+          serviceName:       item.service.serviceName,
+          isSessionBased:    item.service.isSessionBased,
+          durationMinutes:   item.service.durationMinutes,
+          sessionCount:      item.sessionCount,
+          remainingSessions: item.remainingSessions,
+          unitPrice:         item.unitPrice,
+          notes:             item.notes,
+          usedSessions:      item.sessionCount - item.remainingSessions,
+          sessions:          item.sessions
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Satış kalemleri hatası:', error);
+    res.status(500).json({ success: false, message: 'Satış kalemleri getirilemedi.', error: error.message });
+  }
+};
+
+/**
+ * PATCH /api/sales/items/:itemId/use-session
+ * Belirli bir SaleItem'da seans kullan (remainingSessions--)
+ * Body: { staffId?, sessionDate?, notes? }
+ */
+export const useSaleItemSession = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const itemId = parseInt(req.params.itemId);
+    const { staffId, sessionDate, notes } = req.body;
+
+    // Item'ı bul ve satışın bu işletmeye ait olduğunu doğrula
+    const item = await prisma.saleItems.findFirst({
+      where: { id: itemId, sale: { accountId, isDeleted: false } },
+      include: {
+        sale:    { select: { id: true, clientId: true, accountId: true } },
+        service: { select: { serviceName: true } }
+      }
+    });
+
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'Satış kalemi bulunamadı.' });
+    }
+    if (item.remainingSessions <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: `${item.service.serviceName} için kalan seans yok.`
+      });
+    }
+
+    // Transaction: session oluştur + remainingSessions azalt + Sales.remainingSessions azalt
+    const result = await prisma.$transaction(async (tx) => {
+      // Session kaydı oluştur
+      const session = await tx.sessions.create({
+        data: {
+          saleId:      item.sale.id,
+          saleItemId:  item.id,
+          staffId:     staffId ? parseInt(staffId) : null,
+          sessionDate: sessionDate ? new Date(sessionDate) : new Date(),
+          status:      'SCHEDULED',
+          notes:       notes || null
+        }
+      });
+
+      // SaleItem remainingSessions--
+      const updatedItem = await tx.saleItems.update({
+        where: { id: item.id },
+        data:  { remainingSessions: item.remainingSessions - 1 }
+      });
+
+      // Sales.remainingSessions-- (toplam sayacı güncelle)
+      await tx.sales.update({
+        where: { id: item.sale.id },
+        data:  { remainingSessions: { decrement: 1 } }
+      });
+
+      return { session, updatedItem };
+    });
+
+    res.json({
+      success: true,
+      message: 'Seans kullanıldı.',
+      data: {
+        session:           result.session,
+        remainingSessions: result.updatedItem.remainingSessions,
+        serviceName:       item.service.serviceName
+      }
+    });
+  } catch (error) {
+    console.error('Seans kullanım hatası:', error);
+    res.status(500).json({ success: false, message: 'Seans kullanılamadı.', error: error.message });
+  }
+};
+
+// ============================================================
+// PAKET KALEM YÖNETİMİ
+// ============================================================
+
+/**
+ * PATCH /api/sales/items/:itemId
+ * Paketteki bir kalemin fiyatını veya seans sayısını düzenle.
+ * Body: { unitPrice?, sessionCount?, notes? }
+ * - sessionCount artırılabilir, kullanılan seansın altına düşürülemez.
+ * - Değişiklik Sales.totalAmount ve Sales.remainingSessions'a yansır.
+ */
+export const updateSaleItem = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const itemId = parseInt(req.params.itemId);
+    const { unitPrice, sessionCount, notes } = req.body;
+
+    if (unitPrice === undefined && sessionCount === undefined && notes === undefined) {
+      return res.status(400).json({ success: false, message: 'Güncellenecek alan belirtilmelidir (unitPrice, sessionCount, notes).' });
+    }
+
+    const item = await prisma.saleItems.findFirst({
+      where: { id: itemId, sale: { accountId, isDeleted: false } },
+      include: {
+        sale: {
+          include: {
+            saleItems: { select: { id: true, unitPrice: true, sessionCount: true, remainingSessions: true } }
+          }
+        }
+      }
+    });
+
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'Satış kalemi bulunamadı.' });
+    }
+
+    const usedSessions = item.sessionCount - item.remainingSessions;
+
+    // sessionCount, kullanılmış seans sayısının altına düşürülemez
+    if (sessionCount !== undefined) {
+      if (parseInt(sessionCount) < 1) {
+        return res.status(400).json({ success: false, message: 'Seans sayısı en az 1 olmalıdır.' });
+      }
+      if (parseInt(sessionCount) < usedSessions) {
+        return res.status(400).json({
+          success: false,
+          message: `Bu kalemde ${usedSessions} seans kullanılmış. Seans sayısı bunun altına düşürülemez.`
+        });
+      }
+    }
+
+    const newSessionCount = sessionCount !== undefined ? parseInt(sessionCount) : item.sessionCount;
+    const newUnitPrice    = unitPrice    !== undefined ? parseFloat(unitPrice)   : parseFloat(item.unitPrice);
+    const newRemaining    = newSessionCount - usedSessions;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedItem = await tx.saleItems.update({
+        where: { id: itemId },
+        data: {
+          sessionCount:      newSessionCount,
+          remainingSessions: newRemaining,
+          unitPrice:         newUnitPrice,
+          notes:             notes !== undefined ? notes : item.notes
+        },
+        include: { service: { select: { id: true, serviceName: true } } }
+      });
+
+      // Sales.totalAmount ve remainingSessions'ı tüm itemlardan yeniden hesapla
+      const allItems = item.sale.saleItems.map(i =>
+        i.id === itemId
+          ? { unitPrice: newUnitPrice, sessionCount: newSessionCount, remainingSessions: newRemaining }
+          : { unitPrice: parseFloat(i.unitPrice), sessionCount: i.sessionCount, remainingSessions: i.remainingSessions }
+      );
+
+      const newTotal     = allItems.reduce((s, i) => s + i.unitPrice, 0);
+      const newTotalRem  = allItems.reduce((s, i) => s + i.remainingSessions, 0);
+
+      await tx.sales.update({
+        where: { id: item.sale.id },
+        data: { totalAmount: newTotal, remainingSessions: newTotalRem }
+      });
+
+      return updatedItem;
+    });
+
+    res.json({
+      success: true,
+      message: 'Kalem başarıyla güncellendi.',
+      data: { ...result, usedSessions, remainingSessions: newRemaining }
+    });
+  } catch (error) {
+    console.error('Kalem güncelleme hatası:', error);
+    res.status(500).json({ success: false, message: 'Kalem güncellenemedi.', error: error.message });
+  }
+};
+
+/**
+ * POST /api/sales/:id/items
+ * Mevcut paket satışa yeni hizmet kalemi ekle.
+ * Body: { serviceId, sessionCount, unitPrice, notes? }
+ */
+export const addSaleItem = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const saleId = parseInt(req.params.id);
+    const { serviceId, sessionCount, unitPrice, notes } = req.body;
+
+    if (!serviceId || !sessionCount || unitPrice === undefined) {
+      return res.status(400).json({ success: false, message: 'serviceId, sessionCount ve unitPrice zorunludur.' });
+    }
+
+    const sale = await prisma.sales.findFirst({
+      where: { id: saleId, accountId, isDeleted: false }
+    });
+    if (!sale) return res.status(404).json({ success: false, message: 'Satış bulunamadı.' });
+    if (!sale.isPackage) {
+      return res.status(400).json({ success: false, message: 'Bu satış bir paket satış değil. Kalem eklenemiyor.' });
+    }
+
+    const service = await prisma.services.findFirst({
+      where: { id: parseInt(serviceId), accountId, isActive: true }
+    });
+    if (!service) return res.status(404).json({ success: false, message: 'Hizmet bulunamadı.' });
+
+    const parsedSessions = parseInt(sessionCount);
+    const parsedPrice    = parseFloat(unitPrice);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const newItem = await tx.saleItems.create({
+        data: {
+          saleId,
+          serviceId:         parseInt(serviceId),
+          sessionCount:      parsedSessions,
+          remainingSessions: parsedSessions,
+          unitPrice:         parsedPrice,
+          notes:             notes || null
+        },
+        include: { service: { select: { id: true, serviceName: true, isSessionBased: true, durationMinutes: true } } }
+      });
+
+      // Sales.totalAmount ve remainingSessions güncelle
+      await tx.sales.update({
+        where: { id: saleId },
+        data: {
+          totalAmount:       { increment: parsedPrice },
+          remainingSessions: { increment: parsedSessions }
+        }
+      });
+
+      return newItem;
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Hizmet pakete eklendi.',
+      data: result
+    });
+  } catch (error) {
+    console.error('Kalem ekleme hatası:', error);
+    res.status(500).json({ success: false, message: 'Kalem eklenemedi.', error: error.message });
+  }
+};
+
+/**
+ * DELETE /api/sales/:id/items/:itemId
+ * Paketten hizmet kalemi çıkar.
+ * Kullanılmış seansı olan kalem silinemez.
+ */
+export const removeSaleItem = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const saleId = parseInt(req.params.id);
+    const itemId = parseInt(req.params.itemId);
+
+    const item = await prisma.saleItems.findFirst({
+      where: { id: itemId, saleId, sale: { accountId, isDeleted: false } },
+      include: {
+        sale:     { include: { saleItems: { select: { id: true } } } },
+        service:  { select: { serviceName: true } },
+        sessions: { select: { id: true } }
+      }
+    });
+
+    if (!item) return res.status(404).json({ success: false, message: 'Kalem bulunamadı.' });
+
+    const usedSessions = item.sessionCount - item.remainingSessions;
+    if (usedSessions > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `${item.service.serviceName} için ${usedSessions} seans kullanılmış. Kullanılmış seansı olan kalem silinemez.`
+      });
+    }
+
+    // Pakette en az 1 kalem kalmalı
+    if (item.sale.saleItems.length <= 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Pakette en az 1 hizmet olmalıdır. Tüm paketi silmek için satış silme işlemini kullanın.'
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Kaleme bağlı henüz kullanılmamış seansları temizle (varsa)
+      await tx.sessions.deleteMany({ where: { saleItemId: itemId } });
+
+      await tx.saleItems.delete({ where: { id: itemId } });
+
+      // Sales.totalAmount ve remainingSessions güncelle
+      await tx.sales.update({
+        where: { id: saleId },
+        data: {
+          totalAmount:       { decrement: parseFloat(item.unitPrice) },
+          remainingSessions: { decrement: item.remainingSessions }
+        }
+      });
+    });
+
+    res.json({
+      success: true,
+      message: `${item.service.serviceName} paketten çıkarıldı.`
+    });
+  } catch (error) {
+    console.error('Kalem silme hatası:', error);
+    res.status(500).json({ success: false, message: 'Kalem silinemedi.', error: error.message });
   }
 };
