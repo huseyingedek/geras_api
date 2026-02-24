@@ -1759,7 +1759,7 @@ export const getAllPayments = async (req, res) => {
       };
     }
 
-    const payments = await prisma.payments.findMany({
+    const rawPayments = await prisma.payments.findMany({
       where: whereClause,
       include: {
         sale: {
@@ -1767,6 +1767,7 @@ export const getAllPayments = async (req, res) => {
             id: true,
             saleDate: true,
             totalAmount: true,
+            isPackage: true,
             client: {
               select: {
                 id: true,
@@ -1782,6 +1783,21 @@ export const getAllPayments = async (req, res) => {
                 serviceName: true,
                 price: true
               }
+            },
+            saleItems: {
+              select: {
+                id: true,
+                serviceId: true,
+                sessionCount: true,
+                remainingSessions: true,
+                unitPrice: true,
+                service: {
+                  select: {
+                    id: true,
+                    serviceName: true
+                  }
+                }
+              }
             }
           }
         }
@@ -1791,6 +1807,15 @@ export const getAllPayments = async (req, res) => {
       },
       skip: offset,
       take: limit
+    });
+
+    const payments = rawPayments.map(p => {
+      if (!p.sale) return p;
+      let displayServiceName = p.sale.service?.serviceName || null;
+      if (!displayServiceName && p.sale.isPackage && p.sale.saleItems?.length > 0) {
+        displayServiceName = p.sale.saleItems.map(i => i.service?.serviceName).filter(Boolean).join(', ') || 'Paket Satış';
+      }
+      return { ...p, sale: { ...p.sale, displayServiceName } };
     });
 
     const totalPayments = await prisma.payments.count({
@@ -1978,6 +2003,7 @@ export const getPaymentById = async (req, res) => {
             id: true,
             saleDate: true,
             totalAmount: true,
+            isPackage: true,
             client: {
               select: {
                 id: true,
@@ -1993,6 +2019,21 @@ export const getPaymentById = async (req, res) => {
                 serviceName: true,
                 price: true
               }
+            },
+            saleItems: {
+              select: {
+                id: true,
+                serviceId: true,
+                sessionCount: true,
+                remainingSessions: true,
+                unitPrice: true,
+                service: {
+                  select: {
+                    id: true,
+                    serviceName: true
+                  }
+                }
+              }
             }
           }
         }
@@ -2006,9 +2047,17 @@ export const getPaymentById = async (req, res) => {
       });
     }
 
+    let displayServiceName = payment.sale?.service?.serviceName || null;
+    if (!displayServiceName && payment.sale?.isPackage && payment.sale?.saleItems?.length > 0) {
+      displayServiceName = payment.sale.saleItems.map(i => i.service?.serviceName).filter(Boolean).join(', ') || 'Paket Satış';
+    }
+    const paymentWithDisplay = payment.sale
+      ? { ...payment, sale: { ...payment.sale, displayServiceName } }
+      : payment;
+
     res.json({
       success: true,
-      data: payment
+      data: paymentWithDisplay
     });
   } catch (error) {
     console.error('Ödeme detayı getirme hatası:', error);
