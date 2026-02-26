@@ -302,7 +302,36 @@ const getClientById = catchAsync(async (req, res, next) => {
       },
       sales: {
         include: {
-          service: true,
+          service: {
+            select: {
+              id: true,
+              serviceName: true,
+              price: true,
+              isSessionBased: true,
+              sessionCount: true,
+              durationMinutes: true
+            }
+          },
+          saleItems: {
+            select: {
+              id: true,
+              serviceId: true,
+              sessionCount: true,
+              remainingSessions: true,
+              unitPrice: true,
+              notes: true,
+              service: {
+                select: {
+                  id: true,
+                  serviceName: true,
+                  price: true,
+                  isSessionBased: true,
+                  sessionCount: true,
+                  durationMinutes: true
+                }
+              }
+            }
+          },
           sessions: {
             include: {
               staff: true
@@ -321,10 +350,24 @@ const getClientById = catchAsync(async (req, res, next) => {
   if (!client) {
     return next(new AppError('Müşteri bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
   }
-  
+
+  const enrichedSales = client.sales.map(sale => {
+    let displayServiceName = null;
+    if (!sale.isPackage) {
+      displayServiceName = sale.service?.serviceName || null;
+    } else if (sale.saleItems?.length === 1) {
+      displayServiceName = sale.saleItems[0].service?.serviceName || 'Paket Satış';
+    } else if (sale.saleItems?.length > 1) {
+      displayServiceName = `Paket (${sale.saleItems.length} hizmet)`;
+    } else {
+      displayServiceName = 'Paket Satış';
+    }
+    return { ...sale, displayServiceName };
+  });
+
   res.json({
     status: 'success',
-    data: client
+    data: { ...client, sales: enrichedSales }
   });
 });
 
