@@ -419,6 +419,7 @@ export const getReferencePerformanceReport = async (req, res) => {
         sale: {
           select: {
             id: true,
+            totalAmount: true,
             reference_id: true,
             reference_sources: {
               select: { id: true, reference_type: true, reference_name: true }
@@ -435,16 +436,24 @@ export const getReferencePerformanceReport = async (req, res) => {
     let totalPaid = 0;
     let noRefPaid = 0;
     let noRefPaymentCount = 0;
+    let noRefSalesAmount = 0;
+
+    // Her satışı bir kez saymak için (sale.totalAmount tekrar eklenmesini önle)
+    const processedSaleIds = new Set();
 
     allPayments.forEach(payment => {
       const sale = payment.sale;
       const paidAmount = parseFloat(payment.amountPaid);
+      const saleAmount = parseFloat(sale.totalAmount);
       const refId = sale.reference_id;
 
       if (!refId) {
-        // Referanssız
         noRefPaid += paidAmount;
         noRefPaymentCount++;
+        if (!processedSaleIds.has(sale.id)) {
+          noRefSalesAmount += saleAmount;
+          processedSaleIds.add(sale.id);
+        }
         return;
       }
 
@@ -457,38 +466,48 @@ export const getReferencePerformanceReport = async (req, res) => {
           referenceType: ref?.reference_type || 'unknown',
           paymentCount: 0,
           saleCount: 0,
+          totalSalesAmount: 0,
           totalPaid: 0,
           _saleIds: new Set()
         };
       }
 
       referenceStats[refId].paymentCount++;
-      referenceStats[refId]._saleIds.add(sale.id); // tekrar sayımı önle
       referenceStats[refId].totalPaid += paidAmount;
       totalPaid += paidAmount;
+
+      // Satış tutarını sadece bir kez ekle
+      if (!referenceStats[refId]._saleIds.has(sale.id)) {
+        referenceStats[refId]._saleIds.add(sale.id);
+        referenceStats[refId].totalSalesAmount += saleAmount;
+      }
     });
 
-    // saleCount ve averageOrderValue hesapla, _saleIds temizle
+    // saleCount, averageOrderValue, remainingDebt hesapla — _saleIds temizle
     Object.values(referenceStats).forEach(ref => {
       ref.saleCount = ref._saleIds.size;
-      ref.averageOrderValue = ref.saleCount > 0
-        ? parseFloat((ref.totalPaid / ref.saleCount).toFixed(2))
-        : 0;
+      ref.totalSalesAmount = parseFloat(ref.totalSalesAmount.toFixed(2));
       ref.totalPaid = parseFloat(ref.totalPaid.toFixed(2));
+      ref.remainingDebt = parseFloat(Math.max(0, ref.totalSalesAmount - ref.totalPaid).toFixed(2));
+      ref.averageOrderValue = ref.saleCount > 0
+        ? parseFloat((ref.totalSalesAmount / ref.saleCount).toFixed(2))
+        : 0;
       delete ref._saleIds;
     });
 
-    const result = Object.values(referenceStats).sort((a, b) => b.totalPaid - a.totalPaid);
+    const result = Object.values(referenceStats).sort((a, b) => b.totalSalesAmount - a.totalSalesAmount);
     const grandTotalPaid = totalPaid + noRefPaid;
+    const grandTotalSalesAmount = result.reduce((s, r) => s + r.totalSalesAmount, 0) + noRefSalesAmount;
 
     const resultWithPercentages = result.map(ref => ({
       ...ref,
-      revenuePercentage: grandTotalPaid > 0
-        ? parseFloat(((ref.totalPaid / grandTotalPaid) * 100).toFixed(2))
+      revenuePercentage: grandTotalSalesAmount > 0
+        ? parseFloat(((ref.totalSalesAmount / grandTotalSalesAmount) * 100).toFixed(2))
         : 0
     }));
 
-    console.log('📊 Referanslı toplam:', totalPaid.toFixed(2));
+    console.log('📊 Referanslı toplam satış:', result.reduce((s, r) => s + r.totalSalesAmount, 0).toFixed(2));
+    console.log('📊 Referanslı toplam tahsilat:', totalPaid.toFixed(2));
     console.log('📊 Referanssız toplam:', noRefPaid.toFixed(2));
     console.log('📊 Grand total:', grandTotalPaid.toFixed(2));
 
@@ -498,15 +517,18 @@ export const getReferencePerformanceReport = async (req, res) => {
       summary: {
         totalReferences: result.length,
 
-        // Referanslı ödemeler
+        // Referanslı
         referralPaymentCount: allPayments.length - noRefPaymentCount,
+        referralTotalSalesAmount: parseFloat(result.reduce((s, r) => s + r.totalSalesAmount, 0).toFixed(2)),
         referralTotalPaid: parseFloat(totalPaid.toFixed(2)),
 
-        // Referanssız ödemeler
+        // Referanssız
         noReferencePaymentCount: noRefPaymentCount,
+        noReferenceTotalSalesAmount: parseFloat(noRefSalesAmount.toFixed(2)),
         noReferenceTotalPaid: parseFloat(noRefPaid.toFixed(2)),
 
-        // Genel toplam — gelir-gider raporundaki totalIncome ile eşleşir
+        // Genel toplam
+        grandTotalSalesAmount: parseFloat(grandTotalSalesAmount.toFixed(2)),
         grandTotalPaid: parseFloat(grandTotalPaid.toFixed(2)),
 
         topReference: result.length > 0 ? result[0].referenceName : null

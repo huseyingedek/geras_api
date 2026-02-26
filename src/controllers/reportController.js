@@ -323,35 +323,32 @@ export const getIncomeExpenseSummary = async (req, res) => {
     expenses.forEach(expense => {
       const amount = parseFloat(expense.Amount);
       const paidAmount = parseFloat(expense.PaidAmount || 0);
-      
-      totalExpenses += amount;
-      
+
+      // Nakit bazlı muhasebe: gelir gibi gider de sadece ödeneni say
+      totalExpenses += paidAmount;
+
       // Tip bazında grupla (general -> other mapping)
       if (expense.ExpenseType) {
         let expenseType = expense.ExpenseType;
-        
-        // "general" tipini "other" kategorisine map et
+
         if (expenseType === 'general') {
           expenseType = 'other';
         }
-        
-        // staff, vendor, other kategorilerine ata
+
         if (expenseType === 'staff' || expenseType === 'vendor' || expenseType === 'other') {
-          expensesByType[expenseType] = (expensesByType[expenseType] || 0) + amount;
+          expensesByType[expenseType] = (expensesByType[expenseType] || 0) + paidAmount;
         } else {
-          // Tanımlanmamış tipler de "other"a gitsin
-          expensesByType.other += amount;
+          expensesByType.other += paidAmount;
         }
       } else {
-        // ExpenseType null/undefined ise "other"a ata
-        expensesByType.other += amount;
+        expensesByType.other += paidAmount;
       }
-      
+
       // Kategori bazında grupla
       const categoryName = expense.ExpenseCategories?.CategoryName || 'Kategorisiz';
-      expensesByCategory[categoryName] = (expensesByCategory[categoryName] || 0) + amount;
-      
-      // Ödeme durumu
+      expensesByCategory[categoryName] = (expensesByCategory[categoryName] || 0) + paidAmount;
+
+      // Ödeme durumu (referans için toplam tutar üzerinden)
       if (paidAmount >= amount) {
         expensesByPaymentStatus.paid += amount;
       } else if (paidAmount > 0) {
@@ -1065,6 +1062,7 @@ export const getDetailedFinancialReport = async (req, res) => {
       },
       select: {
         Amount: true,
+        PaidAmount: true,
         ExpenseDate: true,
         ExpenseType: true
       },
@@ -1081,7 +1079,7 @@ export const getDetailedFinancialReport = async (req, res) => {
       let key;
 
       if (groupBy === 'day') {
-        key = date.toISOString().split('T')[0]; // YYYY-MM-DD
+        key = date.toISOString().split('T')[0];
       } else if (groupBy === 'week') {
         const weekStart = new Date(date);
         const dayOfWeek = weekStart.getDay();
@@ -1117,7 +1115,8 @@ export const getDetailedFinancialReport = async (req, res) => {
       if (!groupedData[key]) {
         groupedData[key] = { income: 0, expenses: 0, profit: 0 };
       }
-      groupedData[key].expenses += parseFloat(expense.Amount);
+      // Nakit bazlı: sadece ödenmiş gider tutarını say
+      groupedData[key].expenses += parseFloat(expense.PaidAmount || 0);
     });
 
     // Kar hesapla

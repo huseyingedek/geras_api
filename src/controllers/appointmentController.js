@@ -1,5 +1,5 @@
 import prisma from '../lib/prisma.js';
-import { sendSMS, prepareAppointmentSMS, prepareAppointmentCancelSMS } from '../utils/smsService.js';
+import { sendSMS, prepareAppointmentSMS, prepareAppointmentCancelSMS, prepareAppointmentUpdateSMS } from '../utils/smsService.js';
 import { getPlanLimitError } from '../utils/planLimitChecker.js';
 
 export const createQuickAppointment = async (req, res) => {
@@ -1139,7 +1139,6 @@ export const updateAppointment = async (req, res) => {
     // ✅ RANDEVU İPTAL EDİLDİĞİNDE SMS BİLDİRİMİ GÖNDER (NO_SHOW için SMS yok)
     if (newStatus === 'CANCELLED' && oldStatus !== 'CANCELLED' && result.client?.phone) {
       try {
-        // SMS gönderme kontrolü (sadece işletme ayarları)
         const account = await prisma.accounts.findUnique({
           where: { id: accountId },
           select: { smsEnabled: true, businessName: true }
@@ -1166,7 +1165,42 @@ export const updateAppointment = async (req, res) => {
         }
       } catch (smsError) {
         console.error('❌ SMS gönderme işlemi hatası:', smsError);
-        // SMS hatası güncelleme işlemini engellemez
+      }
+    }
+
+    // ✅ RANDEVU TARİHİ DEĞİŞTİĞİNDE SMS BİLDİRİMİ GÖNDER
+    const dateChanged = appointmentDate &&
+      new Date(appointmentDate).getTime() !== existingAppointment.appointmentDate.getTime();
+
+    if (dateChanged && newStatus !== 'CANCELLED' && result.client?.phone) {
+      try {
+        const account = await prisma.accounts.findUnique({
+          where: { id: accountId },
+          select: { smsEnabled: true, businessName: true }
+        });
+
+        if (account?.smsEnabled) {
+          const smsData = {
+            customerName: `${result.client.firstName} ${result.client.lastName}`,
+            serviceName: result.service?.serviceName || 'Paket Satış',
+            oldDate: existingAppointment.appointmentDate,
+            newDate: new Date(appointmentDate),
+            businessName: account.businessName
+          };
+
+          const smsMessage = prepareAppointmentUpdateSMS(smsData);
+          const smsResult = await sendSMS(result.client.phone, smsMessage);
+
+          if (smsResult.success) {
+            console.log('✅ Randevu güncelleme SMS başarıyla gönderildi:', smsResult.messageId);
+          } else {
+            console.error('❌ Randevu güncelleme SMS hatası:', smsResult.error);
+          }
+        } else {
+          console.log('ℹ️ Güncelleme SMS gönderilmedi: İşletme SMS servisi kapalı');
+        }
+      } catch (smsError) {
+        console.error('❌ SMS gönderme işlemi hatası:', smsError);
       }
     }
 

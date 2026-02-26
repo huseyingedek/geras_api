@@ -145,6 +145,12 @@ const processAccountReminders = async (accountId, businessName) => {
       if ((reminderTime <= now && reminderTime >= maxPastReminderTime) || isLastChance) {
         total++;
 
+        // SMS göndermeden ÖNCE işaretle — çift gönderimi ve sonsuz retry'ı önler
+        await prisma.appointments.update({
+          where: { id: appointment.id },
+          data: { reminderSentAt: now }
+        });
+
         // SMS mesajını hazırla
         const smsData = {
           customerName: `${appointment.client.firstName} ${appointment.client.lastName}`,
@@ -157,16 +163,11 @@ const processAccountReminders = async (accountId, businessName) => {
         const smsMessage = prepareAppointmentReminderSMS(smsData);
         const smsResult = await sendSMS(appointment.client.phone, smsMessage);
 
-        if (smsResult.success) {
-          // SMS başarıyla gönderildi - artık tekrar gönderilmemesi için kaydet
-          await prisma.appointments.update({
-            where: { id: appointment.id },
-            data: { reminderSentAt: now }
-          });
-          
+        if (smsResult.success || smsResult.skipped) {
           successful++;
         } else {
           console.error(`❌ Hatırlatma SMS hatası: ${appointment.client.firstName} ${appointment.client.lastName}`, smsResult.error);
+          // reminderSentAt zaten işaretlendi — tekrar denenmeyecek
         }
       }
 

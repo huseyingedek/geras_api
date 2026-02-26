@@ -159,33 +159,57 @@ const formatPhoneNumber = (phone) => {
  * @returns {string} - SMS mesajı
  */
 export const prepareAppointmentSMS = (appointmentData) => {
-  const { 
-    customerName, 
-    serviceName, 
-    appointmentDate, 
-    businessName 
-  } = appointmentData;
+  const { customerName, appointmentDate, businessName } = appointmentData;
 
-  const date = new Date(appointmentDate);
+  const date  = new Date(appointmentDate);
   const day   = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const year  = date.getFullYear();
   const hour  = String(date.getHours()).padStart(2, '0');
   const min   = String(date.getMinutes()).padStart(2, '0');
-  const formattedDateTime = `${day}.${month}.${year} / ${hour}:${min}`;
 
-  return `Sn. ${customerName},
+  return `Sayin ${customerName},
 
-${businessName}'den bilgilendirme:
+${businessName} olarak randevunuzun olusturuldugunu bildiririz.
 
-Randevunuz başarıyla oluşturulmuştur.
+Tarih: ${day}.${month}.${year}
+Saat : ${hour}:${min}
 
-Tarih: ${formattedDateTime}
-Hizmet: ${serviceName}
+Zamaninda gelmenizi rica eder, tercihleriniz icin tesekkur ederiz.
 
-Zamanında gelmenizi rica eder, ilginiz için teşekkür ederiz.
+Saygilarimizla,
+${businessName}`;
+};
 
-İyi günler dileriz.`;
+/**
+ * Randevu tarih/saat değişikliği bildirimi SMS'i hazırla
+ * @param {object} data - { customerName, serviceName, oldDate, newDate, businessName }
+ * @returns {string} - SMS mesajı
+ */
+export const prepareAppointmentUpdateSMS = (data) => {
+  const { customerName, oldDate, newDate, businessName } = data;
+
+  const fmt = (d) => {
+    const date  = new Date(d);
+    const day   = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year  = date.getFullYear();
+    const hour  = String(date.getHours()).padStart(2, '0');
+    const min   = String(date.getMinutes()).padStart(2, '0');
+    return `${day}.${month}.${year} - ${hour}:${min}`;
+  };
+
+  return `Sayin ${customerName},
+
+${businessName} olarak randevunuzun guncellendigini bildiririz.
+
+Eski Tarih: ${fmt(oldDate)}
+Yeni Tarih: ${fmt(newDate)}
+
+Herhangi bir sorunuz icin bizimle iletisime gecebilirsiniz.
+
+Saygilarimizla,
+${businessName}`;
 };
 
 /**
@@ -194,39 +218,23 @@ Zamanında gelmenizi rica eder, ilginiz için teşekkür ederiz.
  * @returns {string} - SMS mesajı
  */
 export const prepareAppointmentCancelSMS = (appointmentData) => {
-  const { 
-    customerName, 
-    serviceName, 
-    appointmentDate, 
-    businessName 
-  } = appointmentData;
+  const { customerName, appointmentDate, businessName } = appointmentData;
 
-  const date = new Date(appointmentDate);
-  const formattedDate = date.toLocaleDateString('tr-TR', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
-  
-  const formattedTime = date.toLocaleTimeString('tr-TR', {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  const date  = new Date(appointmentDate);
+  const day   = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year  = date.getFullYear();
+  const hour  = String(date.getHours()).padStart(2, '0');
+  const min   = String(date.getMinutes()).padStart(2, '0');
 
-  return `Sayın ${customerName},
+  return `Sayin ${customerName},
 
-${businessName}'den bilgilendirme:
+${businessName} olarak ${day}.${month}.${year} tarihli ${hour}:${min} saatindeki randevunuzun iptal edildigini bildiririz.
 
-Randevunuz iptal edilmiştir.
+Yeni randevu icin bizimle iletisime gecebilirsiniz.
 
-Tarih: ${formattedDate}
-Saat: ${formattedTime}
-Hizmet: ${serviceName}
-
-Yeni randevu için bizimle iletişime geçebilirsiniz.
-
-İyi günler dileriz.`;
+Saygilarimizla,
+${businessName}`;
 };
 
 /**
@@ -235,31 +243,26 @@ Yeni randevu için bizimle iletişime geçebilirsiniz.
  * @returns {string} - SMS mesajı
  */
 export const prepareAppointmentReminderSMS = (appointmentData) => {
-  const { 
-    customerName, 
-    serviceName, 
-    appointmentDate, 
-    businessName 
-  } = appointmentData;
+  const { customerName, appointmentDate, businessName } = appointmentData;
 
-  const date = new Date(appointmentDate);
+  const date  = new Date(appointmentDate);
   const day   = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const year  = date.getFullYear();
   const hour  = String(date.getHours()).padStart(2, '0');
   const min   = String(date.getMinutes()).padStart(2, '0');
-  const formattedDateTime = `${day}.${month}.${year} / ${hour}:${min}`;
 
-  return `Sn. ${customerName},
+  return `Sayin ${customerName},
 
-${businessName}'den hatırlatma:
+${businessName} olarak yarinki randevunuzu hatirlatmak isteriz.
 
-${formattedDateTime} tarihli randevunuzu hatırlatmak istedik.
-Hizmet: ${serviceName}
+Tarih: ${day}.${month}.${year}
+Saat : ${hour}:${min}
 
-Zamanında gelmenizi rica eder, teşekkür ederiz.
+Zamaninda gelmenizi rica eder, tercihleriniz icin tesekkur ederiz.
 
-İyi günler dileriz.`;
+Saygilarimizla,
+${businessName}`;
 };
 
 /**
