@@ -1155,3 +1155,189 @@ export const getDetailedFinancialReport = async (req, res) => {
     });
   }
 };
+
+/**
+ * 💸 BORÇ RAPORU
+ * GET /api/reports/debt
+ *
+ * Ödenmemiş veya kısmen ödenmiş satışları müşteri bazında listeler.
+ *
+ * Query Params:
+ * - sortBy: 'debt' (kalan borç) | 'date' (satış tarihi) — varsayılan: 'debt'
+ * - minDebt: minimum kalan borç tutarı filtresi (varsayılan: 0.01)
+ * - search: müşteri adı / telefon araması
+ * - page, limit: sayfalama
+ */
+export const getDebtReport = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const {
+      sortBy = 'debt',
+      minDebt = 0.01,
+      search
+    } = req.query;
+
+    const hasPageParam = req.query.page !== undefined;
+    const page  = parseInt(req.query.page)  || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = (page - 1) * limit;
+
+    // Borçlu satışları çek: tüm satışlar + ödemeler
+    const sales = await prisma.sales.findMany({
+      where: {
+        accountId,
+        isDeleted: false,
+        ...(search && {
+          client: {
+            OR: [
+              { firstName: { contains: search, mode: 'insensitive' } },
+              { lastName:  { contains: search, mode: 'insensitive' } },
+              { phone:     { contains: search, mode: 'insensitive' } }
+            ]
+          }
+        })
+      },
+      include: {
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            email: true
+          }
+        },
+        service: {
+          select: { id: true, serviceName: true }
+        },
+        saleItems: {
+          select: {
+            service: { select: { id: true, serviceName: true } }
+          }
+        },
+        payments: {
+          where: { status: 'COMPLETED' },
+          select: { amountPaid: true }
+        }
+      },
+      orderBy: { saleDate: 'desc' }
+    });
+
+    // Borç hesapla ve filtrele
+    const minDebtNum = parseFloat(minDebt);
+    const debtSales = [];
+
+    for (const sale of sales) {
+      const totalAmount  = parseFloat(sale.totalAmount);
+      const totalPaid    = sale.payments.reduce((s, p) => s + parseFloat(p.amountPaid), 0);
+      const remainingDebt = parseFloat((totalAmount - totalPaid).toFixed(2));
+
+      if (remainingDebt < minDebtNum) continue;
+
+      // displayServiceName
+      let displayServiceName;
+      if (!sale.isPackage) {
+        displayServiceName = sale.service?.serviceName || 'Bilinmiyor';
+      } else if (sale.saleItems?.length === 1) {
+        displayServiceName = sale.saleItems[0].service?.serviceName || 'Paket Satış';
+      } else if (sale.saleItems?.length > 1) {
+        displayServiceName = `Paket (${sale.saleItems.length} hizmet)`;
+      } else {
+        displayServiceName = 'Paket Satış';
+      }
+
+      debtSales.push({
+        saleId:          sale.id,
+        saleDate:        sale.saleDate,
+        isPackage:       sale.isPackage,
+        displayServiceName,
+        totalAmount,
+        totalPaid:       parseFloat(totalPaid.toFixed(2)),
+        remainingDebt,
+        paymentRate:     totalAmount > 0
+          ? parseFloat(((totalPaid / totalAmount) * 100).toFixed(1))
+          : 0,
+        client: sale.client,
+        notes:  sale.notes
+      });
+    }
+
+    // Sıralama
+    if (sortBy === 'debt') {
+      debtSales.sort((a, b) => b.remainingDebt - a.remainingDebt);
+    } else {
+      debtSales.sort((a, b) => new Date(b.saleDate) - new Date(a.saleDate));
+    }
+
+    // Özet
+    const totalDebt       = debtSales.reduce((s, r) => s + r.remainingDebt, 0);
+    const totalSalesAmount = debtSales.reduce((s, r) => s + r.totalAmount,   0);
+    const totalPaidAmount  = debtSales.reduce((s, r) => s + r.totalPaid,     0);
+
+    // Müşteri bazında gruplama (özet için)
+    const byClient = {};
+    debtSales.forEach(s => {
+      const cid = s.client.id;
+      if (!byClient[cid]) {
+        byClient[cid] = {
+          clientId:   cid,
+          clientName: `${s.client.firstName} ${s.client.lastName}`,
+          phone:      s.client.phone,
+          saleCount:  0,
+          totalDebt:  0
+        };
+      }
+      byClient[cid].saleCount++;
+      byClient[cid].totalDebt = parseFloat((byClient[cid].totalDebt + s.remainingDebt).toFixed(2));
+    });
+
+    const clientSummary = Object.values(byClient)
+      .sort((a, b) => b.totalDebt - a.totalDebt)
+      .slice(0, 20); // En borçlu ilk 20 müşteri
+
+    // Sayfalama — page parametresi yoksa tümünü döndür
+    const total     = debtSales.length;
+    const paginated = hasPageParam
+      ? debtSales.slice(offset, offset + limit)
+      : debtSales;
+
+    res.json({
+      success: true,
+      data: paginated,
+      summary: {
+        totalDebtorCount: total,
+        uniqueClients:    Object.keys(byClient).length,
+        totalDebt:        parseFloat(totalDebt.toFixed(2)),
+        totalSalesAmount: parseFloat(totalSalesAmount.toFixed(2)),
+        totalPaidAmount:  parseFloat(totalPaidAmount.toFixed(2)),
+        collectionRate:   totalSalesAmount > 0
+          ? parseFloat(((totalPaidAmount / totalSalesAmount) * 100).toFixed(1))
+          : 0,
+        topDebtors: clientSummary
+      },
+      pagination: hasPageParam ? {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      } : {
+        total,
+        returned: paginated.length,
+        hasPageParam: false
+      },
+      filter: {
+        sortBy,
+        minDebt: minDebtNum,
+        search: search || null
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Borç raporu hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Borç raporu alınamadı',
+      error: error.message
+    });
+  }
+};

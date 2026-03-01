@@ -75,4 +75,17 @@ router.route('/debug-payments')
 router.route('/customer-loyalty')
   .get(checkPermission('reports', 'view'), reportController.getCustomerLoyaltyReport);
 
+/**
+ * 💸 BORÇ RAPORU
+ * GET /api/reports/debt
+ *
+ * Query Params:
+ * - sortBy: 'debt' | 'date' (varsayılan: 'debt')
+ * - minDebt: minimum kalan borç (varsayılan: 0.01)
+ * - search: müşteri adı / telefon
+ * - page, limit: sayfalama
+ */
+router.route('/debt')
+  .get(checkPermission('reports', 'view'), reportController.getDebtReport);
+
 export default router;
