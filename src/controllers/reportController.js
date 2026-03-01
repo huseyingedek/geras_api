@@ -1216,20 +1216,32 @@ export const getDebtReport = async (req, res) => {
           }
         },
         payments: {
-          where: { status: 'COMPLETED' },
-          select: { amountPaid: true }
+          select: {
+            id: true,
+            amountPaid: true,
+            status: true,
+            dueDate: true,
+            installmentNumber: true,
+            paymentDate: true
+          },
+          orderBy: { installmentNumber: 'asc' }
         }
       },
       orderBy: { saleDate: 'desc' }
     });
 
     // Borç hesapla ve filtrele
+    const now        = new Date();
     const minDebtNum = parseFloat(minDebt);
-    const debtSales = [];
+    const debtSales  = [];
 
     for (const sale of sales) {
-      const totalAmount  = parseFloat(sale.totalAmount);
-      const totalPaid    = sale.payments.reduce((s, p) => s + parseFloat(p.amountPaid), 0);
+      const totalAmount = parseFloat(sale.totalAmount);
+
+      const completedPayments = sale.payments.filter(p => p.status === 'COMPLETED');
+      const pendingPayments   = sale.payments.filter(p => p.status === 'PENDING' && p.installmentNumber !== null);
+
+      const totalPaid     = completedPayments.reduce((s, p) => s + parseFloat(p.amountPaid), 0);
       const remainingDebt = parseFloat((totalAmount - totalPaid).toFixed(2));
 
       if (remainingDebt < minDebtNum) continue;
@@ -1246,17 +1258,44 @@ export const getDebtReport = async (req, res) => {
         displayServiceName = 'Paket Satış';
       }
 
+      // Taksit detayları
+      let installmentInfo = null;
+      if (sale.isInstallment && pendingPayments.length > 0) {
+        const overdue  = pendingPayments.filter(p => p.dueDate && new Date(p.dueDate) < now);
+        const upcoming = pendingPayments.filter(p => p.dueDate && new Date(p.dueDate) >= now);
+        const nextDue  = upcoming.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))[0] || null;
+
+        installmentInfo = {
+          installmentCount:   sale.installmentCount,
+          paidCount:          completedPayments.filter(p => p.installmentNumber !== null).length,
+          pendingCount:       pendingPayments.length,
+          overdueCount:       overdue.length,
+          overdueAmount:      parseFloat(overdue.reduce((s, p) => s + parseFloat(p.amountPaid), 0).toFixed(2)),
+          nextDueDate:        nextDue?.dueDate || null,
+          nextDueAmount:      nextDue ? parseFloat(parseFloat(nextDue.amountPaid).toFixed(2)) : null,
+          pendingInstallments: pendingPayments.map(p => ({
+            installmentNumber: p.installmentNumber,
+            amount:   parseFloat(parseFloat(p.amountPaid).toFixed(2)),
+            dueDate:  p.dueDate,
+            isOverdue: p.dueDate ? new Date(p.dueDate) < now : false
+          }))
+        };
+      }
+
       debtSales.push({
-        saleId:          sale.id,
-        saleDate:        sale.saleDate,
-        isPackage:       sale.isPackage,
+        saleId:            sale.id,
+        saleDate:          sale.saleDate,
+        isPackage:         sale.isPackage,
+        isInstallment:     sale.isInstallment || false,
+        installmentCount:  sale.installmentCount || null,
         displayServiceName,
         totalAmount,
-        totalPaid:       parseFloat(totalPaid.toFixed(2)),
+        totalPaid:         parseFloat(totalPaid.toFixed(2)),
         remainingDebt,
-        paymentRate:     totalAmount > 0
+        paymentRate:       totalAmount > 0
           ? parseFloat(((totalPaid / totalAmount) * 100).toFixed(1))
           : 0,
+        installmentInfo,
         client: sale.client,
         notes:  sale.notes
       });
