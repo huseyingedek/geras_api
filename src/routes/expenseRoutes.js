@@ -39,6 +39,9 @@ router.route('/reports/staff')
 router.route('/reports/vendor')
   .get(expenseController.getVendorExpenseReport);
 
+router.route('/reports/general')
+  .get(expenseController.getGeneralExpenseReport);
+
 // 💰 GİDER ROUTE'LARI
 router.route('/')
   .get(expenseController.getAllExpenses)

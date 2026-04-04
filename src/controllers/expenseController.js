@@ -1057,6 +1057,139 @@ export const getStaffExpenseReport = async (req, res) => {
   }
 };
 
+// 📊 RAPOR: GENEL GİDERLER (Kategori bazlı)
+export const getGeneralExpenseReport = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const { period, startDate, endDate, paymentStatus } = req.query;
+
+    let dateFilter = {};
+
+    if (period && period !== 'custom') {
+      const range = getDateRange(period);
+      if (range) {
+        dateFilter = {
+          gte: range.startDate,
+          lte: range.endDate
+        };
+      }
+    } else if (startDate || endDate) {
+      if (startDate) {
+        const [year, month, day] = startDate.split('-').map(Number);
+        dateFilter.gte = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+      }
+      if (endDate) {
+        const [year, month, day] = endDate.split('-').map(Number);
+        dateFilter.lte = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+      }
+    }
+
+    const whereClause = {
+      AccountID: accountId,
+      ExpenseType: 'general',
+      ...(Object.keys(dateFilter).length > 0 && { ExpenseDate: dateFilter }),
+      ...(paymentStatus && { PaymentStatus: paymentStatus })
+    };
+
+    // Kategori bazlı grupla
+    const categoryExpenses = await prisma.expenses.groupBy({
+      by: ['CategoryID'],
+      where: whereClause,
+      _sum: {
+        Amount: true,
+        PaidAmount: true
+      },
+      _count: {
+        ExpenseID: true
+      }
+    });
+
+    const categoryIds = categoryExpenses.map(e => e.CategoryID).filter(id => id !== null);
+    const categoryDetails = await prisma.expenseCategories.findMany({
+      where: {
+        CategoryID: { in: categoryIds },
+        AccountID: accountId
+      },
+      select: {
+        CategoryID: true,
+        CategoryName: true,
+        Description: true
+      }
+    });
+
+    // Son gider kayıtlarını da çek (her kategoriden)
+    const recentExpenses = await prisma.expenses.findMany({
+      where: whereClause,
+      select: {
+        ExpenseID: true,
+        CategoryID: true,
+        ExpenseDate: true,
+        Amount: true,
+        PaidAmount: true,
+        Description: true,
+        PaymentStatus: true
+      },
+      orderBy: { ExpenseDate: 'desc' },
+      take: 100
+    });
+
+    const result = categoryExpenses.map(expense => {
+      const category = categoryDetails.find(c => c.CategoryID === expense.CategoryID);
+      const totalAmount = parseFloat(expense._sum.Amount || 0);
+      const totalPaid = parseFloat(expense._sum.PaidAmount || 0);
+      const expenses = recentExpenses
+        .filter(e => e.CategoryID === expense.CategoryID)
+        .map(e => ({
+          expenseId: e.ExpenseID,
+          date: e.ExpenseDate,
+          amount: parseFloat(e.Amount),
+          paidAmount: parseFloat(e.PaidAmount || 0),
+          description: e.Description,
+          paymentStatus: e.PaymentStatus
+        }));
+
+      return {
+        categoryId: expense.CategoryID,
+        categoryName: category?.CategoryName || 'Kategori Yok',
+        categoryDescription: category?.Description || null,
+        totalExpense: totalAmount,
+        totalPaid: totalPaid,
+        totalUnpaid: totalAmount - totalPaid,
+        expenseCount: expense._count.ExpenseID,
+        expenses
+      };
+    });
+
+    const totalExpense = result.reduce((sum, item) => sum + item.totalExpense, 0);
+    const totalPaid = result.reduce((sum, item) => sum + item.totalPaid, 0);
+
+    res.json({
+      success: true,
+      data: result.sort((a, b) => b.totalExpense - a.totalExpense),
+      summary: {
+        totalCategories: result.length,
+        totalExpense: parseFloat(totalExpense.toFixed(2)),
+        totalPaid: parseFloat(totalPaid.toFixed(2)),
+        totalUnpaid: parseFloat((totalExpense - totalPaid).toFixed(2))
+      },
+      filter: {
+        period: period || null,
+        startDate: startDate || null,
+        endDate: endDate || null,
+        paymentStatus: paymentStatus || null
+      }
+    });
+
+  } catch (error) {
+    console.error('Genel gider raporu hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Genel gider raporu alınamadı',
+      error: error.message
+    });
+  }
+};
+
 // 📊 RAPOR: TEDARİKÇİ BAZLI GİDERLER
 export const getVendorExpenseReport = async (req, res) => {
   try {
