@@ -2,6 +2,18 @@ import prisma from '../lib/prisma.js';
 import AppError from '../utils/AppError.js';
 import { sendSMS } from '../utils/smsService.js';
 
+// Tekrarlayan randevu tarih hesaplama yardımcısı
+const getNextRecurrenceDate = (baseDate, type, multiplier) => {
+  const date = new Date(baseDate);
+  switch (type) {
+    case 'WEEKLY':    date.setDate(date.getDate() + 7 * multiplier); break;
+    case 'BIWEEKLY':  date.setDate(date.getDate() + 14 * multiplier); break;
+    case 'MONTHLY':   date.setMonth(date.getMonth() + multiplier); break;
+    default:          date.setDate(date.getDate() + 7 * multiplier);
+  }
+  return date;
+};
+
 /**
  * Tarih parse helper: "YYYY-MM-DD" gibi sadece tarih geldiğinde
  * new Date() midnight UTC üretir → Türkiye saatinde 03:00 görünür.
@@ -613,7 +625,7 @@ export const createSaleWithAppointment = async (req, res) => {
       notes,
       saleDate,
       reference_id,
-      appointment // { staffId, appointmentDate, notes }
+      appointment // { staffId, appointmentDate, notes, isRecurring, recurrenceType, recurrenceCount }
     } = req.body;
 
     if (!clientId || !serviceId || !appointment?.staffId || !appointment?.appointmentDate) {
@@ -692,13 +704,21 @@ export const createSaleWithAppointment = async (req, res) => {
       });
     }
 
+    // Tekrarlayan randevu parametreleri
+    const isRecurring = appointment?.isRecurring === true;
+    const recurrenceType = appointment?.recurrenceType || 'WEEKLY';
+    const recurrenceCount = isRecurring && appointment?.recurrenceCount > 1
+      ? parseInt(appointment.recurrenceCount)
+      : 1;
+
     // Satış fiyatı / seans hesapları
     let finalPrice;
     let finalTotalAmount;
+    // Tekrarlayan randevularda seans sayısı = tekrar sayısı
     let finalSessions;
 
     if (account.businessType === 'NON_SESSION_BASED' || !service.isSessionBased) {
-      finalSessions = 1;
+      finalSessions = isRecurring ? recurrenceCount : 1;
       if (totalAmount !== undefined && totalAmount !== null) {
         finalPrice = totalAmount;
         finalTotalAmount = totalAmount;
@@ -849,7 +869,10 @@ export const createSaleWithAppointment = async (req, res) => {
           saleId: sale.id,
           appointmentDate: appointmentStart.toISOString(),
           notes: appointment?.notes || null,
-          reminderSentAt: shouldMarkAsSent ? new Date() : null
+          reminderSentAt: shouldMarkAsSent ? new Date() : null,
+          isRecurring: isRecurring && recurrenceCount > 1,
+          recurrenceType: isRecurring ? recurrenceType : null,
+          recurrenceCount: isRecurring ? recurrenceCount : null,
         }
       });
 
@@ -897,16 +920,48 @@ export const createSaleWithAppointment = async (req, res) => {
       }
     });
 
+    // Tekrarlayan randevular oluştur
+    let recurringAppointments = [];
+    if (isRecurring && recurrenceCount > 1) {
+      for (let i = 1; i < recurrenceCount; i++) {
+        try {
+          const nextDate = getNextRecurrenceDate(appointmentStart, recurrenceType, i);
+          const recurAppt = await prisma.appointments.create({
+            data: {
+              accountId,
+              customerName: `${client.firstName} ${client.lastName}`,
+              clientId,
+              serviceId,
+              staffId: appointment.staffId,
+              saleId: result.sale.id,
+              appointmentDate: nextDate.toISOString(),
+              notes: appointment?.notes || null,
+              isRecurring: true,
+              recurrenceType,
+              recurrenceCount,
+              parentAppointmentId: result.appointment.id,
+            }
+          });
+          recurringAppointments.push(recurAppt);
+        } catch (recurErr) {
+          console.error(`Tekrarlayan randevu ${i} oluşturulamadı:`, recurErr.message);
+        }
+      }
+    }
+
     res.status(201).json({
       success: true,
-      message: 'Satış ve randevu başarıyla oluşturuldu',
+      message: recurringAppointments.length > 0
+        ? `Satış ve ${recurrenceCount} tekrarlayan randevu başarıyla oluşturuldu`
+        : 'Satış ve randevu başarıyla oluşturuldu',
       data: {
         sale: {
           ...result.sale,
           totalAmount: parseFloat(result.sale.totalAmount),
           remainingSessions: result.sale.remainingSessions
         },
-        appointment: appointmentWithDetails
+        appointment: appointmentWithDetails,
+        recurringAppointments: recurringAppointments.length > 0 ? recurringAppointments : undefined,
       }
     });
 
