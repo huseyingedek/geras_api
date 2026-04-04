@@ -3,36 +3,37 @@ import prisma from '../lib/prisma.js';
 import { sendSMS } from './smsService.js';
 
 /**
- * Vadesi 1, 2 veya 3 gün kalmış PENDING taksitler için hatırlatma SMS'i gönderir.
+ * Vadesi bugün veya yarın olan PENDING taksitler için hatırlatma SMS'i gönderir.
  * - smsReminderEnabled = true olan satışlar için çalışır
- * - Son 23 saatte reminderSentAt güncellenmediyse SMS gönderilir (tekrarlama önlemi)
+ * - reminderSentAt null olan taksitlerde çalışır (bir kez gönderilir, tekrarlanmaz)
+ * - Vadesi geçmiş taksitlerde SMS gönderilmez
  */
 const sendInstallmentReminders = async () => {
   try {
     const now = new Date();
 
-    // Vade aralığı: bugünden 3 gün sonrasına kadar (geçmiş vadeler de dahil)
-    const rangeEnd = new Date(now);
-    rangeEnd.setDate(rangeEnd.getDate() + 3);
-    rangeEnd.setHours(23, 59, 59, 999);
+    // Bugünün başlangıcı (00:00:00) — vadesi geçmiş taksitler dahil edilmez
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
 
-    // 23 saat önce — bu süreden daha eski reminderSentAt olanlar tekrar alabilir
-    const reminderCooldown = new Date(now);
-    reminderCooldown.setHours(reminderCooldown.getHours() - 23);
+    // Yarının sonu (23:59:59) — sadece bugün ve yarın vadesi olanlar
+    const rangeEnd = new Date(now);
+    rangeEnd.setDate(rangeEnd.getDate() + 1);
+    rangeEnd.setHours(23, 59, 59, 999);
 
     const pendingInstallments = await prisma.payments.findMany({
       where: {
         status: 'PENDING',
         installmentNumber: { not: null },
-        dueDate: { lte: rangeEnd },
+        dueDate: {
+          gte: todayStart, // Vadesi geçmiş taksitler gönderilmez
+          lte: rangeEnd    // Bugün veya yarın vadesi gelenler
+        },
         sale: {
           isDeleted: false,
           smsReminderEnabled: true
         },
-        OR: [
-          { reminderSentAt: null },
-          { reminderSentAt: { lt: reminderCooldown } }
-        ]
+        reminderSentAt: null // Daha önce hiç gönderilmemiş — her gün tekrar gitmez
       },
       include: {
         sale: {
@@ -69,11 +70,9 @@ const sendInstallmentReminders = async () => {
 
       let dueDateLabel;
       if (diffDays <= 0) {
-        dueDateLabel = 'bugün (vadesi geçti)';
-      } else if (diffDays === 1) {
-        dueDateLabel = 'yarın';
+        dueDateLabel = 'bugün';
       } else {
-        dueDateLabel = `${diffDays} gun icinde`;
+        dueDateLabel = 'yarin';
       }
 
       const salutation = client.gender === 'FEMALE' ? 'Sayin Hanim' : client.gender === 'MALE' ? 'Sayin Bey' : 'Sayin';
