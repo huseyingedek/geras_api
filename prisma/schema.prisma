@@ -53,20 +53,24 @@ model Accounts {
 }
 
 model Appointments {
-  id              Int               @id @default(autoincrement()) @map("AppointmentID")
-  accountId       Int               @map("AccountID")
-  customerName    String            @map("CustomerName")
-  clientId        Int?              @map("ClientID")
-  serviceId       Int?              @map("ServiceID")
-  staffId         Int               @map("StaffID")
-  saleId          Int?              @map("SaleID")
-  saleItemId      Int?              @map("SaleItemID")
-  appointmentDate DateTime          @map("AppointmentDate")
-  status          AppointmentStatus @default(PLANNED) @map("Status")
-  notes           String?           @map("Notes")
-  createdAt       DateTime          @default(now()) @map("CreatedAt")
-  updatedAt       DateTime          @default(now()) @updatedAt @map("UpdatedAt")
-  reminderSentAt  DateTime?         @map("ReminderSentAt")
+  id                  Int               @id @default(autoincrement()) @map("AppointmentID")
+  accountId           Int               @map("AccountID")
+  customerName        String            @map("CustomerName")
+  clientId            Int?              @map("ClientID")
+  serviceId           Int?              @map("ServiceID")
+  staffId             Int               @map("StaffID")
+  saleId              Int?              @map("SaleID")
+  saleItemId          Int?              @map("SaleItemID")
+  appointmentDate     DateTime          @map("AppointmentDate")
+  status              AppointmentStatus @default(PLANNED) @map("Status")
+  notes               String?           @map("Notes")
+  isRecurring         Boolean           @default(false) @map("IsRecurring")
+  recurrenceType      String?           @map("RecurrenceType")
+  recurrenceCount     Int?              @map("RecurrenceCount")
+  parentAppointmentId Int?              @map("ParentAppointmentID")
+  createdAt           DateTime          @default(now()) @map("CreatedAt")
+  updatedAt           DateTime          @default(now()) @updatedAt @map("UpdatedAt")
+  reminderSentAt      DateTime?         @map("ReminderSentAt")
   account         Accounts          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   client          Clients?          @relation(fields: [clientId], references: [id], onDelete: Cascade)
   sale            Sales?            @relation(fields: [saleId], references: [id])
@@ -107,6 +111,7 @@ model Sales {
   accountId           Int                @map("AccountID")
   clientId            Int                @map("ClientID")
   serviceId           Int?               @map("ServiceID")
+  staffId             Int?               @map("StaffID")
   saleDate            DateTime           @default(now()) @map("SaleDate")
   totalAmount         Decimal            @map("TotalAmount") @db.Decimal(10, 2)
   remainingSessions   Int                @default(0) @map("RemainingSessions")
@@ -124,6 +129,7 @@ model Sales {
   account             Accounts           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   client              Clients            @relation(fields: [clientId], references: [id], onDelete: Cascade)
   service             Services?          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  staff               Staff?             @relation(fields: [staffId], references: [id], onDelete: SetNull)
   reference_sources   reference_sources? @relation(fields: [reference_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_reference")
   sessions            Sessions[]
   saleItems           SaleItems[]
@@ -213,12 +219,14 @@ model Staff {
   phone            String?           @map("Phone")
   email            String?           @map("Email")
   isActive         Boolean           @default(true) @map("IsActive")
+  commissionRate   Decimal?          @default(0) @map("CommissionRate") @db.Decimal(5, 2)
   createdAt        DateTime          @default(now()) @map("CreatedAt")
   updatedAt        DateTime          @default(now()) @updatedAt @map("UpdatedAt")
   userId           Int?              @unique @map("UserID")
   appointments     Appointments[]
   Expenses         Expenses[]
   sessions         Sessions[]
+  sales            Sales[]
   account          Accounts          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   user             User?             @relation(fields: [userId], references: [id])
   staffPermissions StaffPermission[]

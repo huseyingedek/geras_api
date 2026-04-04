@@ -277,6 +277,13 @@ export const getAllSales = async (req, res) => {
             status: true
           }
         },
+        staff: {
+          select: {
+            id: true,
+            fullName: true,
+            role: true
+          }
+        },
         reference_sources: {
           select: {
             id: true,
@@ -428,7 +435,8 @@ export const createSale = async (req, res) => {
       totalAmount,
       notes,
       saleDate,
-      reference_id  // ✅ Referans ID eklendi
+      reference_id,
+      staffId
     } = req.body;
 
     const account = await prisma.accounts.findUnique({
@@ -534,6 +542,7 @@ export const createSale = async (req, res) => {
         accountId: accountId,
         clientId: clientId,
         serviceId: serviceId,
+        staffId: staffId ? parseInt(staffId) : null,
         isPackage: false,
         saleDate: finalSaleDate,
         totalAmount: finalTotalAmount,
@@ -560,7 +569,14 @@ export const createSale = async (req, res) => {
             sessionCount: true
           }
         },
-        reference_sources: {  // ✅ Referans bilgisini de getir
+        staff: {
+          select: {
+            id: true,
+            fullName: true,
+            role: true
+          }
+        },
+        reference_sources: {
           select: {
             id: true,
             reference_type: true,
@@ -813,6 +829,7 @@ export const createSaleWithAppointment = async (req, res) => {
           accountId: accountId,
           clientId: clientId,
           serviceId: serviceId,
+          staffId: appointment.staffId ? parseInt(appointment.staffId) : null,
           isPackage: false,
           saleDate: finalSaleDate,
           totalAmount: finalTotalAmount,
@@ -951,6 +968,13 @@ export const getSaleById = async (req, res) => {
                 fullName: true
               }
             }
+          }
+        },
+        staff: {
+          select: {
+            id: true,
+            fullName: true,
+            role: true
           }
         },
         reference_sources: {
@@ -2506,6 +2530,7 @@ export const createPackageSale = async (req, res) => {
     const { accountId } = req.user;
     const {
       clientId,
+      staffId,
       saleDate,
       notes,
       referenceId,
@@ -2572,8 +2597,9 @@ export const createPackageSale = async (req, res) => {
       const sale = await tx.sales.create({
         data: {
           accountId,
-          clientId: parseInt(clientId),
+          clientId:           parseInt(clientId),
           serviceId:          null,
+          staffId:            staffId ? parseInt(staffId) : null,
           isPackage:          true,
           saleDate:           parsedSaleDate,
           totalAmount:        totalAmount,

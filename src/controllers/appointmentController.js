@@ -2,6 +2,18 @@ import prisma from '../lib/prisma.js';
 import { sendSMS, prepareAppointmentSMS, prepareAppointmentCancelSMS, prepareAppointmentUpdateSMS } from '../utils/smsService.js';
 import { getPlanLimitError } from '../utils/planLimitChecker.js';
 
+// Tekrarlayan randevu tarih hesaplama yardımcısı
+const getNextRecurrenceDate = (baseDate, type, multiplier) => {
+  const date = new Date(baseDate);
+  switch (type) {
+    case 'WEEKLY':    date.setDate(date.getDate() + 7 * multiplier); break;
+    case 'BIWEEKLY':  date.setDate(date.getDate() + 14 * multiplier); break;
+    case 'MONTHLY':   date.setMonth(date.getMonth() + multiplier); break;
+    default:          date.setDate(date.getDate() + 7 * multiplier);
+  }
+  return date;
+};
+
 export const createQuickAppointment = async (req, res) => {
   try {
     const { accountId } = req.user;
@@ -16,7 +28,10 @@ export const createQuickAppointment = async (req, res) => {
       staffId,
       appointmentDate,
       notes,
-      saleDate
+      saleDate,
+      isRecurring,
+      recurrenceType,
+      recurrenceCount
     } = req.body;
 
     if (!firstName || !lastName || !serviceId || !staffId || !appointmentDate) {
@@ -198,7 +213,10 @@ export const createQuickAppointment = async (req, res) => {
       });
 
       const finalTotalAmount = totalAmount || parseFloat(service.price);
-      const finalSessions = remainingSessions || (service.isSessionBased ? service.sessionCount : 1);
+      // Tekrarlayan randevularda seans sayısı = tekrar sayısı
+      const finalSessions = remainingSessions || (isRecurring && recurrenceCount > 1
+        ? parseInt(recurrenceCount)
+        : (service.isSessionBased ? service.sessionCount : 1));
 
       const finalSaleDate = saleDate ? new Date(saleDate) : new Date();
       
@@ -241,7 +259,10 @@ export const createQuickAppointment = async (req, res) => {
           saleId: sale.id,
           appointmentDate: new Date(appointmentDate).toISOString(),
           notes: notes || null,
-          reminderSentAt: shouldMarkAsSent ? new Date() : null // Hatırlatma çok yakınsa doldur
+          reminderSentAt: shouldMarkAsSent ? new Date() : null,
+          isRecurring: isRecurring === true && parseInt(recurrenceCount) > 1,
+          recurrenceType: (isRecurring && recurrenceType) ? recurrenceType : null,
+          recurrenceCount: (isRecurring && recurrenceCount) ? parseInt(recurrenceCount) : null,
         }
       });
 
@@ -328,10 +349,45 @@ export const createQuickAppointment = async (req, res) => {
       }
     }
 
+    // ✅ TEKRARlAYAN RANDEVULAR OLUŞTUR
+    let recurringAppointments = [];
+    if (isRecurring && recurrenceType && recurrenceCount && parseInt(recurrenceCount) > 1) {
+      const baseDate = new Date(appointmentDate);
+      const totalOccurrences = parseInt(recurrenceCount);
+
+      for (let i = 1; i < totalOccurrences; i++) {
+        try {
+          const nextDate = getNextRecurrenceDate(baseDate, recurrenceType, i);
+          const recurAppt = await prisma.appointments.create({
+            data: {
+              accountId,
+              customerName: `${firstName} ${lastName}`,
+              clientId: result.client.id,
+              serviceId,
+              staffId,
+              saleId: result.sale.id,
+              appointmentDate: nextDate.toISOString(),
+              notes: notes || null,
+              isRecurring: true,
+              recurrenceType,
+              recurrenceCount: totalOccurrences,
+              parentAppointmentId: result.appointment.id,
+            }
+          });
+          recurringAppointments.push(recurAppt);
+        } catch (recurErr) {
+          console.error(`Tekrarlayan randevu ${i} oluşturulamadı:`, recurErr.message);
+        }
+      }
+    }
+
     res.status(201).json({
       success: true,
-      message: 'Hızlı randevu başarıyla oluşturuldu',
-      data: appointmentWithDetails
+      message: recurringAppointments.length > 0
+        ? `Randevu ve ${recurringAppointments.length} tekrarlayan randevu başarıyla oluşturuldu`
+        : 'Hızlı randevu başarıyla oluşturuldu',
+      data: appointmentWithDetails,
+      recurringAppointments: recurringAppointments.length > 0 ? recurringAppointments : undefined,
     });
 
   } catch (error) {

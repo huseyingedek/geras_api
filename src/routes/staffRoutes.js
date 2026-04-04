@@ -14,6 +14,9 @@ router.route('/')
 router.route('/permissions')
   .get(checkPermission('staff', 'view'), staffController.getAllPermissions);
 
+router.route('/commission-report')
+  .get(checkPermission('staff', 'view'), staffController.getCommissionReport);
+
 router.route('/:id')
   .get(checkPermission('staff', 'view'), staffController.getStaffById)
   .put(checkPermission('staff', 'update'), staffController.updateStaff)

@@ -60,10 +60,31 @@ const checkIncompleteAppointments = async () => {
 };
 
 /**
+ * Bu işletme için son 2 saat içinde aynı türde bildirim gönderildi mi kontrol et
+ */
+const wasRecentlyNotified = async (accountId) => {
+  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const recent = await prisma.notification.findFirst({
+    where: {
+      accountId,
+      referenceType: 'INCOMPLETE_APPOINTMENTS',
+      createdAt: { gte: twoHoursAgo }
+    }
+  });
+  return !!recent;
+};
+
+/**
  * Belirli bir işletme için tamamlanmamış randevuları kontrol et
  */
 const processAccountIncompleteAppointments = async (accountId, businessName) => {
   const now = new Date();
+
+  // Son 2 saat içinde zaten bildirim gönderildiyse atla
+  const alreadyNotified = await wasRecentlyNotified(accountId);
+  if (alreadyNotified) {
+    return { notificationsSent: 0, skipped: true };
+  }
   
   // Bugünün başlangıç ve bitiş saatleri
   const todayStart = new Date(now);
@@ -81,13 +102,16 @@ const processAccountIncompleteAppointments = async (accountId, businessName) => 
   const yesterdayEnd = new Date(todayStart);
   yesterdayEnd.setMilliseconds(-1);
 
-  // 1️⃣ BUGÜNÜN TAMAMLANMAMIŞ RANDEVULARı (sadece PLANNED)
+  // Şu anki saatten 30 dakika öncesi — saati geçmiş randevuları yakalamak için
+  const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
+
+  // 1️⃣ BUGÜNÜN TAMAMLANMAMIŞ RANDEVULARı — saati geçmiş olanlar (sadece PLANNED)
   const todayIncomplete = await prisma.appointments.findMany({
     where: {
       accountId: accountId,
       appointmentDate: {
         gte: todayStart,
-        lte: todayEnd
+        lte: thirtyMinutesAgo  // sadece saati 30dk+ geçmiş randevular
       },
       status: 'PLANNED' // Sadece bekleyen randevular
     },
@@ -236,21 +260,18 @@ const processAccountIncompleteAppointments = async (accountId, businessName) => 
 
 /**
  * Tamamlanmamış randevu bildirim servisini başlat
+ * İş saatleri boyunca her 2 saatte bir çalışır:
+ * 10:00, 12:00, 14:00, 16:00, 18:00, 20:00, 22:00
  */
 export const startIncompleteAppointmentsService = () => {
-  // Her gün saat 22:30'da çalış
-  cron.schedule('30 22 * * *', () => {
+  cron.schedule('0 10,12,14,16,18,20,22 * * *', () => {
     checkIncompleteAppointments();
   }, {
     scheduled: true,
     timezone: "Europe/Istanbul"
   });
 
-  console.log('📊 Tamamlanmamış randevu bildirim servisi başlatıldı - Her gün 22:30\'da çalışacak');
-
-  setTimeout(() => {
-    checkIncompleteAppointments();
-  }, 5000); // 5 saniye sonra
+  console.log('📊 Tamamlanmamış randevu bildirim servisi başlatıldı - Her 2 saatte bir (10:00-22:00)');
 };
 
 /**

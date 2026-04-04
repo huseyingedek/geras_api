@@ -110,6 +110,7 @@ const createStaff = catchAsync(async (req, res, next) => {
         email,
         isActive: isActive !== false,
         userId: userId,
+        ...(commissionRate !== undefined && commissionRate !== null && { commissionRate: parseFloat(commissionRate) }),
       }
     });
     
@@ -377,6 +378,7 @@ const updateStaff = catchAsync(async (req, res, next) => {
     phone,
     email,
     isActive,
+    commissionRate,
     workingHours,
     permissions
   } = req.body;
@@ -449,7 +451,8 @@ const updateStaff = catchAsync(async (req, res, next) => {
           ...(role && { role }),
           ...(phone && { phone }),
           ...(email && { email }),
-          ...(isActive !== undefined && { isActive: isActive === true || isActive === 'true' })
+          ...(isActive !== undefined && { isActive: isActive === true || isActive === 'true' }),
+          ...(commissionRate !== undefined && commissionRate !== null && { commissionRate: parseFloat(commissionRate) }),
         }
       });
       
@@ -789,6 +792,114 @@ const getActionFromPermissionName = (permissionName) => {
   if (permissionName.endsWith('_update')) return 'update';
   if (permissionName.endsWith('_delete')) return 'delete';
   return 'unknown';
+};
+
+// 📊 KOMİSYON RAPORU
+export const getCommissionReport = async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const { period, startDate, endDate, staffId } = req.query;
+
+    // Tarih aralığı hesapla
+    let dateFilter = {};
+    const now = new Date();
+
+    if (period && period !== 'custom') {
+      const periodMap = {
+        today: { gte: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0), lte: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59) },
+        thisWeek: (() => { const d = new Date(now); d.setDate(d.getDate() - d.getDay() + 1); d.setHours(0,0,0,0); const e = new Date(d); e.setDate(e.getDate() + 6); e.setHours(23,59,59,999); return { gte: d, lte: e }; })(),
+        thisMonth: { gte: new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0), lte: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59) },
+        lastMonth: { gte: new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0), lte: new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59) },
+      };
+      dateFilter = periodMap[period] || {};
+    } else if (startDate || endDate) {
+      if (startDate) { const [y, m, d] = startDate.split('-').map(Number); dateFilter.gte = new Date(Date.UTC(y, m - 1, d, 0, 0, 0)); }
+      if (endDate)   { const [y, m, d] = endDate.split('-').map(Number);   dateFilter.lte = new Date(Date.UTC(y, m - 1, d, 23, 59, 59)); }
+    } else {
+      // Varsayılan: bu ay
+      dateFilter = { gte: new Date(now.getFullYear(), now.getMonth(), 1), lte: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59) };
+    }
+
+    // Personelleri ve komisyon oranlarını getir
+    const staffWhere = { accountId, isActive: true };
+    if (staffId) staffWhere.id = parseInt(staffId);
+
+    const staffList = await prisma.staff.findMany({
+      where: staffWhere,
+      select: { id: true, fullName: true, role: true, phone: true, commissionRate: true }
+    });
+
+    // Her personel için yaptığı satışları ve tahsil edilen ödemeleri getir
+    const result = await Promise.all(staffList.map(async (staff) => {
+      const sales = await prisma.sales.findMany({
+        where: {
+          accountId,
+          staffId: staff.id,
+          isDeleted: false,
+          saleDate: Object.keys(dateFilter).length > 0 ? dateFilter : undefined
+        },
+        include: {
+          payments: {
+            where: { status: 'COMPLETED' }
+          },
+          service: { select: { serviceName: true } },
+          client: { select: { firstName: true, lastName: true } }
+        }
+      });
+
+      // Prim tabanı: satış tutarı (satış yapıldığında hak kazanılır)
+      let totalCollected = 0;
+      let totalSaleAmount = 0;
+      sales.forEach(sale => {
+        totalSaleAmount += parseFloat(sale.totalAmount);
+        sale.payments.forEach(p => {
+          totalCollected += parseFloat(p.amountPaid);
+        });
+      });
+
+      const rate = parseFloat(staff.commissionRate || 0);
+      const commissionEarned = (totalSaleAmount * rate) / 100;
+
+      return {
+        staffId: staff.id,
+        staffName: staff.fullName,
+        staffRole: staff.role,
+        staffPhone: staff.phone,
+        commissionRate: rate,
+        saleCount: sales.length,
+        totalSaleAmount: parseFloat(totalSaleAmount.toFixed(2)),
+        totalCollected: parseFloat(totalCollected.toFixed(2)),
+        commissionEarned: parseFloat(commissionEarned.toFixed(2)),
+        sales: sales.map(s => ({
+          saleId: s.id,
+          saleDate: s.saleDate,
+          clientName: `${s.client.firstName} ${s.client.lastName}`,
+          serviceName: s.service?.serviceName || 'Paket Satış',
+          totalAmount: parseFloat(s.totalAmount),
+          collected: parseFloat(s.payments.reduce((sum, p) => sum + parseFloat(p.amountPaid), 0).toFixed(2))
+        }))
+      };
+    }));
+
+    const summary = {
+      totalStaff: result.length,
+      totalSales: result.reduce((s, r) => s + r.saleCount, 0),
+      totalSaleAmount: parseFloat(result.reduce((s, r) => s + r.totalSaleAmount, 0).toFixed(2)),
+      totalCollected: parseFloat(result.reduce((s, r) => s + r.totalCollected, 0).toFixed(2)),
+      totalCommission: parseFloat(result.reduce((s, r) => s + r.commissionEarned, 0).toFixed(2)),
+    };
+
+    res.json({
+      success: true,
+      data: result.sort((a, b) => b.commissionEarned - a.commissionEarned),
+      summary,
+      filter: { period: period || null, startDate: startDate || null, endDate: endDate || null }
+    });
+
+  } catch (error) {
+    console.error('Komisyon raporu hatası:', error);
+    res.status(500).json({ success: false, message: 'Komisyon raporu alınamadı', error: error.message });
+  }
 };
 
 export {
