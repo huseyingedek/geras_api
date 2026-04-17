@@ -15,6 +15,7 @@ import clientNotesRoutes from './clientNotesRoutes.js';
 import reportRoutes from './reportRoutes.js';
 import planRoutes from './planRoutes.js';
 import chatRoutes from './chatRoutes.js';
+import bookingRoutes from './bookingRoutes.js'; // Public online randevu
 
 const router = express.Router();
 
@@ -37,6 +38,7 @@ router.use('/references', referenceRoutes);
 router.use('/reports', reportRoutes);
 router.use('/plans', planRoutes);
 router.use('/chat', chatRoutes);
+router.use('/booking', bookingRoutes); // Public online randevu (auth yok)
 router.use('/', clientNotesRoutes); // Client notes routes
 
 export default router; 

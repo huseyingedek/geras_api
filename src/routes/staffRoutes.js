@@ -25,4 +25,9 @@ router.route('/:id')
 router.route('/:id/permissions')
   .put(checkPermission('staff', 'update'), staffController.updateStaffPermissions);
 
+// Personel-Hizmet ataması (online randevu için)
+router.route('/:id/services')
+  .get(checkPermission('staff', 'view'),   staffController.getStaffServices)
+  .put(checkPermission('staff', 'update'), staffController.updateStaffServices);
+
 export default router; 

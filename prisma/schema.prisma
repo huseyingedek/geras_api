@@ -170,6 +170,7 @@ model Services {
   appointments    Appointments[]
   sales           Sales[]
   saleItems       SaleItems[]
+  staffServices   StaffServices[]
   account         Accounts       @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@unique([accountId, serviceName])
@@ -227,6 +228,7 @@ model Staff {
   Expenses         Expenses[]
   sessions         Sessions[]
   sales            Sales[]
+  staffServices    StaffServices[]
   account          Accounts          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   user             User?             @relation(fields: [userId], references: [id])
   staffPermissions StaffPermission[]
@@ -620,4 +622,20 @@ model PhoneVerification {
   @@index([phone, code], map: "idx_phone_verification")
   @@index([expiresAt], map: "idx_verification_expiry")
   @@map("PhoneVerification")
+}
+
+// ── Online Randevu: Personel-Hizmet Eşleşmesi ──────────────
+model StaffServices {
+  id        Int      @id @default(autoincrement()) @map("StaffServiceID")
+  staffId   Int      @map("StaffID")
+  serviceId Int      @map("ServiceID")
+  createdAt DateTime @default(now()) @map("CreatedAt")
+
+  staff   Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  service Services @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, serviceId])
+  @@index([staffId], map: "idx_staff_services_staff")
+  @@index([serviceId], map: "idx_staff_services_service")
+  @@map("StaffServices")
 }

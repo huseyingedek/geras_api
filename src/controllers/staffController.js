@@ -902,6 +902,83 @@ export const getCommissionReport = async (req, res) => {
   }
 };
 
+// ── Personel Hizmet Ataması (StaffServices) ──────────────────
+
+/**
+ * GET /api/staff/:id/services
+ * Bir personele atanmış hizmetleri listeler.
+ */
+const getStaffServices = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const accountId = req.user.accountId;
+
+  const staff = await prisma.staff.findFirst({
+    where: { id: parseInt(id), accountId },
+  });
+  if (!staff) return next(new AppError('Personel bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+
+  const staffServices = await prisma.staffServices.findMany({
+    where: { staffId: parseInt(id) },
+    include: {
+      service: {
+        select: { id: true, serviceName: true, price: true, durationMinutes: true, isActive: true },
+      },
+    },
+    orderBy: { service: { serviceName: 'asc' } },
+  });
+
+  res.json({
+    status: 'success',
+    data: staffServices.map((ss) => ss.service),
+  });
+});
+
+/**
+ * PUT /api/staff/:id/services
+ * Bir personele atanacak hizmetleri günceller (tam liste replace).
+ * Body: { serviceIds: [1, 3, 7] }
+ */
+const updateStaffServices = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { serviceIds } = req.body;
+  const accountId = req.user.accountId;
+
+  if (!Array.isArray(serviceIds))
+    return next(new AppError('serviceIds dizi olmalıdır', 400, ErrorCodes.GENERAL_VALIDATION_ERROR));
+
+  const staff = await prisma.staff.findFirst({
+    where: { id: parseInt(id), accountId },
+  });
+  if (!staff) return next(new AppError('Personel bulunamadı', 404, ErrorCodes.GENERAL_NOT_FOUND));
+
+  // Gelen hizmet ID'lerinin bu hesaba ait olduğunu doğrula
+  const validServices = await prisma.services.findMany({
+    where: { id: { in: serviceIds.map(Number) }, accountId, isActive: true },
+    select: { id: true },
+  });
+  const validIds = validServices.map((s) => s.id);
+
+  // Transaction: mevcut atamaları sil, yenilerini ekle
+  await prisma.$transaction(async (tx) => {
+    await tx.staffServices.deleteMany({ where: { staffId: parseInt(id) } });
+    if (validIds.length > 0) {
+      await tx.staffServices.createMany({
+        data: validIds.map((serviceId) => ({
+          staffId: parseInt(id),
+          serviceId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+  });
+
+  res.json({
+    status: 'success',
+    message: `Personele ${validIds.length} hizmet atandı`,
+    data: { assignedServiceIds: validIds },
+  });
+});
+
 export {
   createStaff,
   getAllStaff,
@@ -909,5 +986,7 @@ export {
   updateStaff,
   deleteStaff,
   updateStaffPermissions,
-  getAllPermissions
+  getAllPermissions,
+  getStaffServices,
+  updateStaffServices,
 }; 

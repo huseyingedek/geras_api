@@ -187,16 +187,36 @@ export const getIncomeExpenseSummary = async (req, res) => {
           periodLabel = 'Geçen Ay';
           break;
           
+        case 'last_2_months': {
+          const l2m_now = new Date();
+          // Geçen ayın 1'i → bu ayın son günü
+          const last2MonthsStart = new Date(Date.UTC(
+            l2m_now.getFullYear(),
+            l2m_now.getMonth() - 1,
+            1,
+            0, 0, 0, 0
+          ));
+          const last2MonthsEnd = new Date(Date.UTC(
+            l2m_now.getFullYear(),
+            l2m_now.getMonth() + 1,
+            0,
+            23, 59, 59, 999
+          ));
+          dateFilter = { gte: last2MonthsStart, lte: last2MonthsEnd };
+          periodLabel = 'Son 2 Ay';
+          break;
+        }
+
         case 'this_year':
           const yearStart = new Date(Date.UTC(now.getFullYear(), 0, 1, 0, 0, 0, 0));
-          
+
           dateFilter = {
             gte: yearStart,
             lte: now
           };
           periodLabel = 'Bu Yıl';
           break;
-          
+
         default:
           // Default: Bu ay
           const default_now = new Date();
@@ -359,11 +379,38 @@ export const getIncomeExpenseSummary = async (req, res) => {
     });
 
     // ===================================================
+    // 🛒 TOPLAM SATIŞ (Sales.totalAmount — fatura tutarı)
+    // ===================================================
+
+    const salesWhereClause = {
+      accountId: accountId,
+      isDeleted: false
+    };
+
+    if (Object.keys(dateFilter).length > 0) {
+      salesWhereClause.saleDate = dateFilter;
+    }
+
+    const salesAggregate = await prisma.sales.aggregate({
+      where: salesWhereClause,
+      _sum: { totalAmount: true },
+      _count: { id: true }
+    });
+
+    const totalSales = parseFloat(salesAggregate._sum.totalAmount || 0);
+    const totalSalesCount = salesAggregate._count.id || 0;
+
+    // ===================================================
     // 📊 HESAPLAMALAR VE SONUÇLAR
     // ===================================================
-    
-    const netProfit = totalIncome - totalExpenses;
-    const profitMargin = totalIncome > 0 ? ((netProfit / totalIncome) * 100) : 0;
+
+    // totalIncome = Toplam Tahsilat (kasaya giren)
+    // totalSales  = Toplam Satış   (fatura tutarı)
+    // Brüt Kar = Toplam Satış - Giderler
+    // Net Kar  = Toplam Tahsilat - Giderler
+    const grossProfit = totalSales - totalExpenses;
+    const netProfit   = totalIncome - totalExpenses;
+    const profitMargin = totalSales > 0 ? ((grossProfit / totalSales) * 100) : 0;
 
     // Son 30 gün karşılaştırması için (trend analizi)
     const thirtyDaysAgo = new Date();
@@ -418,16 +465,24 @@ export const getIncomeExpenseSummary = async (req, res) => {
       data: {
         // Özet
         summary: {
-          totalIncome: parseFloat(totalIncome.toFixed(2)),
-          totalExpenses: parseFloat(totalExpenses.toFixed(2)),
-          netProfit: parseFloat(netProfit.toFixed(2)),
-          profitMargin: parseFloat(profitMargin.toFixed(2)),
-          status: netProfit >= 0 ? 'profit' : 'loss', // KAR mı ZARAR mı
+          // Yeni alanlar
+          totalSales:      parseFloat(totalSales.toFixed(2)),      // Toplam Satış (fatura)
+          totalCollection: parseFloat(totalIncome.toFixed(2)),     // Toplam Tahsilat (kasaya giren)
+          totalExpenses:   parseFloat(totalExpenses.toFixed(2)),
+          grossProfit:     parseFloat(grossProfit.toFixed(2)),     // Brüt Kar = Satış - Gider
+          netProfit:       parseFloat(netProfit.toFixed(2)),       // Net Kar  = Tahsilat - Gider
+          profitMargin:    parseFloat(profitMargin.toFixed(2)),
+          // Geriye dönük uyumluluk
+          totalIncome:     parseFloat(totalIncome.toFixed(2)),
+          status: grossProfit >= 0 ? 'profit' : 'loss',
           formatted: {
-            totalIncome: `${totalIncome.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`,
-            totalExpenses: `${totalExpenses.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`,
-            netProfit: `${netProfit.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`,
-            profitMargin: `%${profitMargin.toFixed(2)}`
+            totalSales:      `${totalSales.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`,
+            totalCollection: `${totalIncome.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`,
+            totalIncome:     `${totalIncome.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`,
+            totalExpenses:   `${totalExpenses.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`,
+            grossProfit:     `${grossProfit.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`,
+            netProfit:       `${netProfit.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`,
+            profitMargin:    `%${profitMargin.toFixed(2)}`
           }
         },
 

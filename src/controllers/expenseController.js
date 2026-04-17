@@ -1,57 +1,64 @@
 import prisma from '../lib/prisma.js';
 
-// 📊 Tarih filtreleme helper fonksiyonu (sales controller ile uyumlu)
+// 📊 Tarih filtreleme helper fonksiyonu — tüm periyotlar desteklenir
 // ✅ TIMEZONE FIX: UTC kullanarak tarih oluştur (Prisma uyumlu)
 const getDateRange = (period) => {
   const now = new Date();
-  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0));
-  
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const d = now.getDate();
+
+  const utcStart = (yr, mo, dy) => new Date(Date.UTC(yr, mo, dy, 0, 0, 0, 0));
+  const utcEnd   = (yr, mo, dy) => new Date(Date.UTC(yr, mo, dy, 23, 59, 59, 999));
+
   switch (period) {
     case 'today':
-      const todayEnd = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999));
-      return {
-        startDate: today,
-        endDate: todayEnd
-      };
-    
-    case 'yesterday':
-      const yesterdayDate = new Date(now);
-      yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-      const yesterday = new Date(Date.UTC(yesterdayDate.getFullYear(), yesterdayDate.getMonth(), yesterdayDate.getDate(), 0, 0, 0, 0));
-      const yesterdayEnd = new Date(Date.UTC(yesterdayDate.getFullYear(), yesterdayDate.getMonth(), yesterdayDate.getDate(), 23, 59, 59, 999));
-      return {
-        startDate: yesterday,
-        endDate: yesterdayEnd
-      };
-    
-    case 'thisWeek':
-      const currentDate = new Date(now);
-      const dayOfWeek = currentDate.getDay();
-      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Pazartesi başlangıç
-      currentDate.setDate(currentDate.getDate() + diff);
-      
-      const startOfWeek = new Date(Date.UTC(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 0, 0, 0, 0));
-      
-      const endWeekDate = new Date(currentDate);
-      endWeekDate.setDate(endWeekDate.getDate() + 6); // Pazar günü
-      const endOfWeek = new Date(Date.UTC(endWeekDate.getFullYear(), endWeekDate.getMonth(), endWeekDate.getDate(), 23, 59, 59, 999));
-      
-      return {
-        startDate: startOfWeek,
-        endDate: endOfWeek
-      };
-    
-    case 'thisMonth':
-      const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0));
-      
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-      const endOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), lastDay, 23, 59, 59, 999));
-      
-      return {
-        startDate: startOfMonth,
-        endDate: endOfMonth
-      };
-    
+      return { startDate: utcStart(y, m, d), endDate: utcEnd(y, m, d) };
+
+    case 'yesterday': {
+      const yest = new Date(y, m, d - 1);
+      return { startDate: utcStart(yest.getFullYear(), yest.getMonth(), yest.getDate()),
+               endDate:   utcEnd  (yest.getFullYear(), yest.getMonth(), yest.getDate()) };
+    }
+
+    case 'thisWeek': {
+      const dow = now.getDay();
+      const diff = dow === 0 ? -6 : 1 - dow; // Pazartesi
+      const ws = new Date(y, m, d + diff);
+      const we = new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + 6);
+      return { startDate: utcStart(ws.getFullYear(), ws.getMonth(), ws.getDate()),
+               endDate:   utcEnd  (we.getFullYear(), we.getMonth(), we.getDate()) };
+    }
+
+    case 'lastWeek': {
+      const dow = now.getDay();
+      const diff = dow === 0 ? -6 : 1 - dow;
+      const thisWs = new Date(y, m, d + diff);
+      const lws = new Date(thisWs.getFullYear(), thisWs.getMonth(), thisWs.getDate() - 7);
+      const lwe = new Date(lws.getFullYear(), lws.getMonth(), lws.getDate() + 6);
+      return { startDate: utcStart(lws.getFullYear(), lws.getMonth(), lws.getDate()),
+               endDate:   utcEnd  (lwe.getFullYear(), lwe.getMonth(), lwe.getDate()) };
+    }
+
+    case 'thisMonth': {
+      const lastDay = new Date(y, m + 1, 0).getDate();
+      return { startDate: utcStart(y, m, 1), endDate: utcEnd(y, m, lastDay) };
+    }
+
+    case 'lastMonth': {
+      const lm = new Date(y, m - 1, 1);
+      const lastDayLm = new Date(lm.getFullYear(), lm.getMonth() + 1, 0).getDate();
+      return { startDate: utcStart(lm.getFullYear(), lm.getMonth(), 1),
+               endDate:   utcEnd  (lm.getFullYear(), lm.getMonth(), lastDayLm) };
+    }
+
+    case 'last2Months': {
+      const twoMoAgo = new Date(y, m - 1, 1); // geçen ayın 1'i
+      const lastDay  = new Date(y, m + 1, 0).getDate(); // bu ayın son günü
+      return { startDate: utcStart(twoMoAgo.getFullYear(), twoMoAgo.getMonth(), 1),
+               endDate:   utcEnd  (y, m, lastDay) };
+    }
+
     default:
       return null;
   }
@@ -65,44 +72,40 @@ export const getAllExpenses = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const offset = (page - 1) * limit;
     
-    const { period, startDate, endDate, categoryId, paymentStatus, expenseType, search } = req.query;
+    const { period, startDate, endDate, categoryId, paymentStatus, expenseType, search, filterBy } = req.query;
 
-    // Filtreler (Sales controller ile uyumlu)
-    let whereClause = {
-      AccountID: accountId
-    };
+    // filterBy: 'expenseDate' (varsayılan) | 'paymentDate'
+    // expenseDate → giderin oluşturulduğu ay (tahakkuk)
+    // paymentDate → paranın cebinizden çıktığı gün (nakit akış)
+    const useDateField = filterBy === 'paymentDate' ? 'PaymentDate' : 'ExpenseDate';
 
-    // Tarih filtreleme (Sales controller ile aynı mantık)
+    let whereClause = { AccountID: accountId };
+
+    // --- Tarih filtreleme ---
     let dateFilter = null;
 
     if (period && period !== 'custom') {
-      // Hızlı tarih seçimleri (bugün, dün, bu hafta, bu ay)
       dateFilter = getDateRange(period);
     } else if (startDate || endDate) {
-      // ✅ TIMEZONE FIX: Özel tarih aralığı - UTC kullan (Prisma uyumlu)
       dateFilter = {};
       if (startDate) {
-        // "2025-01-01" -> UTC Date object
-        const [year, month, day] = startDate.split('-').map(Number);
-        const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
-        dateFilter.startDate = start;
+        const [yr, mo, dy] = startDate.split('-').map(Number);
+        dateFilter.startDate = new Date(Date.UTC(yr, mo - 1, dy, 0, 0, 0, 0));
       }
       if (endDate) {
-        // "2025-01-31" -> UTC Date object (gün sonu)
-        const [year, month, day] = endDate.split('-').map(Number);
-        const end = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
-        dateFilter.endDate = end;
+        const [yr, mo, dy] = endDate.split('-').map(Number);
+        dateFilter.endDate = new Date(Date.UTC(yr, mo - 1, dy, 23, 59, 59, 999));
       }
     }
 
-    // Tarih filtresini whereClause'a ekle
     if (dateFilter && (dateFilter.startDate || dateFilter.endDate)) {
-      whereClause.ExpenseDate = {};
-      if (dateFilter.startDate) {
-        whereClause.ExpenseDate.gte = dateFilter.startDate;
-      }
-      if (dateFilter.endDate) {
-        whereClause.ExpenseDate.lte = dateFilter.endDate;
+      whereClause[useDateField] = {};
+      if (dateFilter.startDate) whereClause[useDateField].gte = dateFilter.startDate;
+      if (dateFilter.endDate)   whereClause[useDateField].lte = dateFilter.endDate;
+
+      // Ödeme tarihi filtresinde NULL olan kayıtları dışla
+      if (useDateField === 'PaymentDate') {
+        whereClause.PaymentDate = { ...whereClause.PaymentDate, not: null };
       }
     }
 
@@ -196,7 +199,8 @@ export const getAllExpenses = async (req, res) => {
         endDate: endDate || null,
         categoryId: categoryId || null,
         paymentStatus: paymentStatus || null,
-        expenseType: expenseType || null
+        expenseType: expenseType || null,
+        filterBy: useDateField === 'PaymentDate' ? 'paymentDate' : 'expenseDate'
       },
       dateRange: dateFilter ? {
         startDate: dateFilter.startDate?.toISOString(),
@@ -1084,9 +1088,9 @@ export const getGeneralExpenseReport = async (req, res) => {
       }
     }
 
+    // "Tüm Giderler" — ExpenseType filtresi YOK, tüm türler dahil
     const whereClause = {
       AccountID: accountId,
-      ExpenseType: 'general',
       ...(Object.keys(dateFilter).length > 0 && { ExpenseDate: dateFilter }),
       ...(paymentStatus && { PaymentStatus: paymentStatus })
     };
