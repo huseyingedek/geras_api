@@ -1224,6 +1224,39 @@ export const updateAppointment = async (req, res) => {
       }
     }
 
+    // ✅ ONLINE RANDEVU ONAYLANDIĞINDA SMS BİLDİRİMİ GÖNDER (PENDING → PLANNED)
+    if (oldStatus === 'PENDING' && newStatus === 'PLANNED' && result.client?.phone) {
+      try {
+        const account = await prisma.accounts.findUnique({
+          where: { id: accountId },
+          select: { smsEnabled: true, businessName: true }
+        });
+
+        if (account?.smsEnabled) {
+          const smsData = {
+            customerName: `${result.client.firstName} ${result.client.lastName}`,
+            serviceName: result.service?.serviceName || 'Randevu',
+            appointmentDate: result.appointmentDate,
+            staffName: result.staff?.fullName || '',
+            businessName: account.businessName
+          };
+
+          const smsMessage = prepareAppointmentSMS(smsData);
+          const smsResult = await sendSMS(result.client.phone, smsMessage);
+
+          if (smsResult.success) {
+            console.log('✅ Randevu onay SMS başarıyla gönderildi:', smsResult.messageId);
+          } else {
+            console.error('❌ Randevu onay SMS hatası:', smsResult.error);
+          }
+        } else {
+          console.log('ℹ️ Onay SMS gönderilmedi: İşletme SMS servisi kapalı');
+        }
+      } catch (smsError) {
+        console.error('❌ SMS gönderme işlemi hatası:', smsError);
+      }
+    }
+
     // ✅ RANDEVU TARİHİ DEĞİŞTİĞİNDE SMS BİLDİRİMİ GÖNDER
     const dateChanged = appointmentDate &&
       new Date(appointmentDate).getTime() !== existingAppointment.appointmentDate.getTime();
