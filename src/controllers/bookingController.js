@@ -204,7 +204,7 @@ export const getAvailableSlots = async (req, res) => {
         staffId,
         accountId,
         appointmentDate: { gte: start, lte: end },
-        status: { in: ['PLANNED', 'COMPLETED'] },
+        status: { in: ['PENDING', 'PLANNED', 'COMPLETED'] },
       },
       select: { appointmentDate: true },
     });
@@ -294,27 +294,42 @@ export const createBookingRequest = async (req, res) => {
       return sendError(res, 400, 'Geçmiş tarih/saate randevu alınamaz');
 
     // Slot dolu mu?
-    const { start, end } = dayBounds(date);
     const conflict = await prisma.appointments.findFirst({
       where: {
         staffId: parseInt(staffId),
         accountId,
         appointmentDate,
-        status: { in: ['PLANNED', 'COMPLETED'] },
+        status: { in: ['PENDING', 'PLANNED', 'COMPLETED'] },
       },
     });
     if (conflict) return sendError(res, 409, 'Bu saat dilimi dolu, lütfen başka bir saat seçin');
 
-    // Mevcut müşteri var mı? (telefon numarasına göre eşleştir)
+    // Müşteri bul veya oluştur (telefon numarasına göre)
     let clientId = null;
     const existingClient = await prisma.clients.findFirst({
       where: { accountId, phone },
     });
+
     if (existingClient) {
       clientId = existingClient.id;
+    } else {
+      // Yeni müşteri oluştur — isim/soyisim ayır
+      const nameParts = customerName.trim().split(' ');
+      const firstName = nameParts[0] ?? customerName.trim();
+      const lastName  = nameParts.slice(1).join(' ') || '-';
+
+      const newClient = await prisma.clients.create({
+        data: {
+          accountId,
+          firstName,
+          lastName,
+          phone,
+        },
+      });
+      clientId = newClient.id;
     }
 
-    // Randevu oluştur
+    // Randevu oluştur — PENDING (onay bekliyor)
     const appointment = await prisma.appointments.create({
       data: {
         accountId,
@@ -323,7 +338,7 @@ export const createBookingRequest = async (req, res) => {
         clientId,
         customerName: customerName.trim(),
         appointmentDate,
-        status: 'PLANNED',
+        status: 'PENDING',
         notes: `Online randevu — Tel: ${customerPhone}`,
       },
     });

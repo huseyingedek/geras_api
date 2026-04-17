@@ -442,6 +442,7 @@ enum BusinessType {
 }
 
 enum AppointmentStatus {
+  PENDING    // Online randevudan geldi, onay bekliyor
   PLANNED
   COMPLETED
   CANCELLED
