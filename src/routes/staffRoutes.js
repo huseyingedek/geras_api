@@ -14,6 +14,10 @@ router.route('/')
 router.route('/permissions')
   .get(checkPermission('staff', 'view'), staffController.getAllPermissions);
 
+// Tüm personel-hizmet matrix (tek çağrıda)
+router.route('/services-matrix')
+  .get(checkPermission('staff', 'view'), staffController.getServicesMatrix);
+
 router.route('/commission-report')
   .get(checkPermission('staff', 'view'), staffController.getCommissionReport);
 

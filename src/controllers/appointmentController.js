@@ -418,6 +418,14 @@ export const createAppointment = async (req, res) => {
       });
     }
 
+    // Geçmiş tarihe randevu oluşturma engeli
+    if (new Date(appointmentDate) <= new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Geçmiş tarihe randevu oluşturulamaz'
+      });
+    }
+
     const limitError = await getPlanLimitError(accountId, 'maxAppointmentsPerMonth');
     if (limitError) {
       return res.status(limitError.statusCode || 403).json({ status: 'fail', message: limitError.message, errorCode: limitError.errorCode });
@@ -953,7 +961,7 @@ export const updateAppointment = async (req, res) => {
   try {
     const { accountId } = req.user;
     const { id } = req.params;
-    const { staffId, appointmentDate, status, notes } = req.body;
+    const { staffId, appointmentDate, status, notes, serviceId } = req.body;
 
     const existingAppointment = await prisma.appointments.findFirst({
       where: {
@@ -1078,7 +1086,8 @@ export const updateAppointment = async (req, res) => {
         staffId: staffId || existingAppointment.staffId,
         appointmentDate: appointmentDate ? new Date(appointmentDate).toISOString() : existingAppointment.appointmentDate,
         status: newStatus,
-        notes: notes !== undefined ? notes : existingAppointment.notes
+        notes: notes !== undefined ? notes : existingAppointment.notes,
+        ...(serviceId !== undefined && { serviceId: serviceId ? parseInt(serviceId) : null }),
       };
 
       // Randevu tarihi değiştiriliyorsa hatırlatma kaydını sıfırla (yeni hatırlatma gönderebilmek için)

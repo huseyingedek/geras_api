@@ -902,6 +902,36 @@ export const getCommissionReport = async (req, res) => {
   }
 };
 
+// ── Personel-Hizmet Matrix (tek çağrıda tüm atamalar) ────────
+
+/**
+ * GET /api/staff/services-matrix
+ * Tüm aktif personelin service ID listelerini döndürür.
+ * { staffId: 1, serviceIds: [2, 5, 8] }[]
+ */
+const getServicesMatrix = catchAsync(async (req, res) => {
+  const accountId = req.user.accountId;
+
+  const rows = await prisma.staffServices.findMany({
+    where: { staff: { accountId, isActive: true } },
+    select: { staffId: true, serviceId: true },
+  });
+
+  // staffId bazında grupla
+  const map = {};
+  for (const row of rows) {
+    if (!map[row.staffId]) map[row.staffId] = [];
+    map[row.staffId].push(row.serviceId);
+  }
+
+  const result = Object.entries(map).map(([staffId, serviceIds]) => ({
+    staffId: Number(staffId),
+    serviceIds,
+  }));
+
+  res.json({ status: 'success', data: result });
+});
+
 // ── Personel Hizmet Ataması (StaffServices) ──────────────────
 
 /**
@@ -987,6 +1017,7 @@ export {
   deleteStaff,
   updateStaffPermissions,
   getAllPermissions,
+  getServicesMatrix,
   getStaffServices,
   updateStaffServices,
 }; 
