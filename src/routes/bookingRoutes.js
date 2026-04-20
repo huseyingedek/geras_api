@@ -14,6 +14,8 @@ import {
   getBookingStaff,
   getAvailableSlots,
   createBookingRequest,
+  sendBookingOtp,
+  verifyBookingOtp,
 } from '../controllers/bookingController.js';
 
 const router = express.Router();
@@ -46,6 +48,12 @@ router.get('/:accountId/staff', readLimiter, getBookingStaff);
 
 // GET /api/booking/:accountId/slots?staffId=X&date=YYYY-MM-DD
 router.get('/:accountId/slots', readLimiter, getAvailableSlots);
+
+// POST /api/booking/:accountId/send-otp
+router.post('/:accountId/send-otp', bookingLimiter, sendBookingOtp);
+
+// POST /api/booking/:accountId/verify-otp
+router.post('/:accountId/verify-otp', bookingLimiter, verifyBookingOtp);
 
 // POST /api/booking/:accountId/request
 router.post('/:accountId/request', bookingLimiter, createBookingRequest);

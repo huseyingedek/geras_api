@@ -7,6 +7,19 @@
  */
 
 import prisma from '../lib/prisma.js';
+import { sendSMS } from '../utils/smsService.js';
+
+// ── OTP Deposu (in-memory, 5 dk TTL) ─────────────────────────
+// Her giriş: { code, expires }
+const otpStore = new Map();
+
+// 1 saatte bir süresi dolmuş kayıtları temizle
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of otpStore.entries()) {
+    if (val.expires < now) otpStore.delete(key);
+  }
+}, 60 * 60 * 1000);
 
 // ── Yardımcılar ──────────────────────────────────────────────
 
@@ -241,18 +254,121 @@ export const getAvailableSlots = async (req, res) => {
   }
 };
 
-// ── 5. Randevu talebi oluştur ────────────────────────────────
+// ── 5. OTP Gönder ────────────────────────────────────────────
+/**
+ * POST /api/booking/:accountId/send-otp
+ * Body: { phone }
+ * SMS ile 4 haneli doğrulama kodu gönderir.
+ * Müşteri sistemde kayıtlıysa isExisting: true döner.
+ */
+export const sendBookingOtp = async (req, res) => {
+  try {
+    const accountId = parseInt(req.params.accountId);
+    if (isNaN(accountId)) return sendError(res, 400, 'Geçersiz salon ID');
+
+    const rawPhone = (req.body.phone || '').replace(/\D/g, '');
+    if (rawPhone.length < 10) return sendError(res, 400, 'Geçerli bir telefon numarası girin');
+
+    // Hesap var mı?
+    const account = await prisma.accounts.findUnique({ where: { id: accountId, isActive: true } });
+    if (!account) return sendError(res, 404, 'Salon bulunamadı');
+
+    // OTP üret (4 hane)
+    const code = String(Math.floor(1000 + Math.random() * 9000));
+    otpStore.set(`${accountId}:${rawPhone}`, { code, expires: Date.now() + 5 * 60 * 1000 });
+
+    // Mevcut müşteri mi?
+    const existingClient = await prisma.clients.findFirst({ where: { accountId, phone: rawPhone } });
+
+    // SMS gönder
+    const smsText = `${account.businessName} randevu doğrulama kodunuz: ${code}\nKod 5 dakika geçerlidir.`;
+    await sendSMS(rawPhone, smsText);
+
+    res.json({ status: 'success', isExisting: !!existingClient });
+  } catch (err) {
+    console.error('[booking/send-otp]', err);
+    sendError(res, 500, 'SMS gönderilemedi, lütfen tekrar deneyin');
+  }
+};
+
+// ── 6. OTP Doğrula ───────────────────────────────────────────
+/**
+ * POST /api/booking/:accountId/verify-otp
+ * Body: { phone, code }
+ * Kodu doğrular; mevcut müşterinin bilgilerini ve aktif satışlarını döner.
+ */
+export const verifyBookingOtp = async (req, res) => {
+  try {
+    const accountId = parseInt(req.params.accountId);
+    if (isNaN(accountId)) return sendError(res, 400, 'Geçersiz salon ID');
+
+    const rawPhone = (req.body.phone || '').replace(/\D/g, '');
+    const code     = (req.body.code || '').trim();
+
+    const key   = `${accountId}:${rawPhone}`;
+    const entry = otpStore.get(key);
+
+    if (!entry)                   return sendError(res, 400, 'Doğrulama kodu bulunamadı, yeniden gönderin');
+    if (Date.now() > entry.expires) return sendError(res, 400, 'Kodun süresi doldu, yeniden gönderin');
+    if (entry.code !== code)       return sendError(res, 400, 'Hatalı doğrulama kodu');
+
+    // Kodu tüket
+    otpStore.delete(key);
+
+    // Mevcut müşteri + aktif paketleri getir
+    const client = await prisma.clients.findFirst({
+      where: { accountId, phone: rawPhone },
+      include: {
+        sales: {
+          where: { isDeleted: false, remainingSessions: { gt: 0 } },
+          include: {
+            service: { select: { id: true, serviceName: true, durationMinutes: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (client) {
+      res.json({
+        status:     'success',
+        isExisting: true,
+        client: {
+          id:        client.id,
+          firstName: client.firstName,
+          lastName:  client.lastName,
+          phone:     rawPhone,
+        },
+        activeSales: client.sales.map(s => ({
+          id:                s.id,
+          remainingSessions: s.remainingSessions,
+          serviceId:         s.serviceId,
+          serviceName:       s.service?.serviceName ?? 'Hizmet',
+          durationMinutes:   s.service?.durationMinutes ?? null,
+        })),
+      });
+    } else {
+      res.json({ status: 'success', isExisting: false, client: null, activeSales: [] });
+    }
+  } catch (err) {
+    console.error('[booking/verify-otp]', err);
+    sendError(res, 500, 'Sunucu hatası');
+  }
+};
+
+// ── 7. Randevu talebi oluştur ────────────────────────────────
 /**
  * POST /api/booking/:accountId/request
- * Body: { staffId, serviceId, date, time, customerName, customerPhone }
- * Yeni bir Appointment PLANNED statüsünde oluşturur.
+ * Body: { staffId, serviceId, date, time, customerName, customerPhone, clientId?, saleId? }
+ * OTP doğrulandıktan sonra çağrılır — PENDING randevu oluşturur.
+ * saleId verilirse randevu mevcut satışa bağlanır.
  */
 export const createBookingRequest = async (req, res) => {
   try {
     const accountId = parseInt(req.params.accountId);
     if (isNaN(accountId)) return sendError(res, 400, 'Geçersiz salon ID');
 
-    const { staffId, serviceId, date, time, customerName, customerPhone } =
+    const { staffId, serviceId, date, time, customerName, customerPhone, clientId, saleId } =
       req.body;
 
     // Basit validasyon
@@ -276,10 +392,20 @@ export const createBookingRequest = async (req, res) => {
     });
     if (!staff) return sendError(res, 404, 'Personel bulunamadı');
 
-    // Hizmet kontrolü (opsiyonel — servis yoksa null geçilir)
-    if (serviceId) {
+    // Hizmet kontrolü
+    let resolvedServiceId = serviceId ? parseInt(serviceId) : null;
+
+    if (saleId) {
+      // saleId verilmişse → satışı doğrula ve serviceId'yi oradan al
+      const sale = await prisma.sales.findFirst({
+        where: { id: parseInt(saleId), accountId, isDeleted: false, remainingSessions: { gt: 0 } },
+        include: { service: true },
+      });
+      if (!sale) return sendError(res, 400, 'Seçilen paket bulunamadı veya seansı kalmadı');
+      resolvedServiceId = sale.serviceId;
+    } else if (resolvedServiceId) {
       const service = await prisma.services.findFirst({
-        where: { id: parseInt(serviceId), accountId, isActive: true },
+        where: { id: resolvedServiceId, accountId, isActive: true },
       });
       if (!service) return sendError(res, 404, 'Hizmet bulunamadı');
     }
@@ -304,38 +430,32 @@ export const createBookingRequest = async (req, res) => {
     });
     if (conflict) return sendError(res, 409, 'Bu saat dilimi dolu, lütfen başka bir saat seçin');
 
-    // Müşteri bul veya oluştur (telefon numarasına göre)
-    let clientId = null;
-    const existingClient = await prisma.clients.findFirst({
-      where: { accountId, phone },
-    });
+    // Müşteri bul veya oluştur
+    let resolvedClientId = clientId ? parseInt(clientId) : null;
 
-    if (existingClient) {
-      clientId = existingClient.id;
-    } else {
-      // Yeni müşteri oluştur — isim/soyisim ayır
-      const nameParts = customerName.trim().split(' ');
-      const firstName = nameParts[0] ?? customerName.trim();
-      const lastName  = nameParts.slice(1).join(' ') || '-';
-
-      const newClient = await prisma.clients.create({
-        data: {
-          accountId,
-          firstName,
-          lastName,
-          phone,
-        },
-      });
-      clientId = newClient.id;
+    if (!resolvedClientId) {
+      const existingClient = await prisma.clients.findFirst({ where: { accountId, phone } });
+      if (existingClient) {
+        resolvedClientId = existingClient.id;
+      } else {
+        const nameParts = customerName.trim().split(' ');
+        const firstName = nameParts[0] ?? customerName.trim();
+        const lastName  = nameParts.slice(1).join(' ') || '-';
+        const newClient = await prisma.clients.create({
+          data: { accountId, firstName, lastName, phone },
+        });
+        resolvedClientId = newClient.id;
+      }
     }
 
-    // Randevu oluştur — PENDING (onay bekliyor)
+    // Randevu oluştur — PENDING
     const appointment = await prisma.appointments.create({
       data: {
         accountId,
         staffId:      parseInt(staffId),
-        serviceId:    serviceId ? parseInt(serviceId) : null,
-        clientId,
+        serviceId:    resolvedServiceId,
+        clientId:     resolvedClientId,
+        saleId:       saleId ? parseInt(saleId) : null,
         customerName: customerName.trim(),
         appointmentDate,
         status: 'PENDING',
