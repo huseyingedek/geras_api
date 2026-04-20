@@ -315,14 +315,20 @@ export const verifyBookingOtp = async (req, res) => {
     // Kodu tüket
     otpStore.delete(key);
 
-    // Mevcut müşteri + aktif paketleri getir
+    // Mevcut müşteri + aktif satışlarını getir
     const client = await prisma.clients.findFirst({
       where: { accountId, phone: rawPhone },
       include: {
         sales: {
-          where: { isDeleted: false, remainingSessions: { gt: 0 } },
+          where: { isDeleted: false },
           include: {
             service: { select: { id: true, serviceName: true, durationMinutes: true } },
+            saleItems: {
+              where: { remainingSessions: { gt: 0 } },
+              include: {
+                service: { select: { id: true, serviceName: true, durationMinutes: true } },
+              },
+            },
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -330,6 +336,38 @@ export const verifyBookingOtp = async (req, res) => {
     });
 
     if (client) {
+      // Hem normal seans satışları hem de paket içindeki saleItem'ları düzleştir
+      const activeSales = [];
+      for (const sale of client.sales) {
+        if (sale.isPackage) {
+          // Paket: her saleItem ayrı satır olarak göster
+          for (const item of (sale.saleItems || [])) {
+            if (item.remainingSessions > 0 && item.service) {
+              activeSales.push({
+                id:                sale.id,
+                saleItemId:        item.id,
+                remainingSessions: item.remainingSessions,
+                serviceId:         item.service.id,
+                serviceName:       item.service.serviceName,
+                durationMinutes:   item.service.durationMinutes ?? null,
+                isPackage:         true,
+              });
+            }
+          }
+        } else if (sale.remainingSessions > 0 && sale.service) {
+          // Normal seans satışı
+          activeSales.push({
+            id:                sale.id,
+            saleItemId:        null,
+            remainingSessions: sale.remainingSessions,
+            serviceId:         sale.service.id,
+            serviceName:       sale.service.serviceName,
+            durationMinutes:   sale.service.durationMinutes ?? null,
+            isPackage:         false,
+          });
+        }
+      }
+
       res.json({
         status:     'success',
         isExisting: true,
@@ -339,13 +377,7 @@ export const verifyBookingOtp = async (req, res) => {
           lastName:  client.lastName,
           phone:     rawPhone,
         },
-        activeSales: client.sales.map(s => ({
-          id:                s.id,
-          remainingSessions: s.remainingSessions,
-          serviceId:         s.serviceId,
-          serviceName:       s.service?.serviceName ?? 'Hizmet',
-          durationMinutes:   s.service?.durationMinutes ?? null,
-        })),
+        activeSales,
       });
     } else {
       res.json({ status: 'success', isExisting: false, client: null, activeSales: [] });
