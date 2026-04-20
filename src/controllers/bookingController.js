@@ -400,7 +400,7 @@ export const createBookingRequest = async (req, res) => {
     const accountId = parseInt(req.params.accountId);
     if (isNaN(accountId)) return sendError(res, 400, 'Geçersiz salon ID');
 
-    const { staffId, serviceId, date, time, customerName, customerPhone, clientId, saleId } =
+    const { staffId, serviceId, date, time, customerName, customerPhone, clientId, saleId, saleItemId } =
       req.body;
 
     // Basit validasyon
@@ -427,8 +427,22 @@ export const createBookingRequest = async (req, res) => {
     // Hizmet kontrolü
     let resolvedServiceId = serviceId ? parseInt(serviceId) : null;
 
-    if (saleId) {
-      // saleId verilmişse → satışı doğrula ve serviceId'yi oradan al
+    if (saleId && saleItemId) {
+      // Paket saleItem → saleItem üzerinden service çöz
+      const saleItem = await prisma.saleItems.findFirst({
+        where: {
+          id:                parseInt(saleItemId),
+          saleId:            parseInt(saleId),
+          remainingSessions: { gt: 0 },
+          sale: { accountId, isDeleted: false },
+        },
+        include: { service: true },
+      });
+      if (!saleItem || !saleItem.service)
+        return sendError(res, 400, 'Seçilen paket seansı bulunamadı veya seansı kalmadı');
+      resolvedServiceId = saleItem.service.id;
+    } else if (saleId) {
+      // Normal seans satışı → satıştan serviceId al
       const sale = await prisma.sales.findFirst({
         where: { id: parseInt(saleId), accountId, isDeleted: false, remainingSessions: { gt: 0 } },
         include: { service: true },
@@ -488,6 +502,7 @@ export const createBookingRequest = async (req, res) => {
         serviceId:    resolvedServiceId,
         clientId:     resolvedClientId,
         saleId:       saleId ? parseInt(saleId) : null,
+        saleItemId:   saleItemId ? parseInt(saleItemId) : null,
         customerName: customerName.trim(),
         appointmentDate,
         status: 'PENDING',
