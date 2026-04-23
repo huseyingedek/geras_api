@@ -84,7 +84,7 @@ app.use(helmet({
 
 app.use(xss());
 app.use(hpp());
-app.use(mongoSanitize());
+app.use(mongoSanitize({ allowDots: true }));
 
 app.get('/health', async (req, res) => {
   try {
