@@ -1,6 +1,6 @@
 import express from 'express';
 import { verifyWebhook, receiveWebhook, testSendMessage } from '../controllers/whatsappController.js';
-import { protect } from '../middleware/authMiddleware.js';
+import { isAuthenticated } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -9,6 +9,6 @@ router.get('/webhook', verifyWebhook);
 router.post('/webhook', receiveWebhook);
 
 // Test endpoint — sadece yetkili kullanıcılar
-router.post('/test-send', protect, testSendMessage);
+router.post('/test-send', isAuthenticated, testSendMessage);
 
 export default router;
