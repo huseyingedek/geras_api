@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import prisma from '../lib/prisma.js';
 import { sendSMS, prepareAppointmentReminderSMS } from '../utils/smsService.js';
+import { sendAppointmentReminderWA } from '../utils/whatsappService.js';
 
 /**
  * Neon cold-start için basit retry yardımcısı
@@ -162,6 +163,16 @@ const processAccountReminders = async (accountId, businessName) => {
 
         const smsMessage = prepareAppointmentReminderSMS(smsData);
         const smsResult = await sendSMS(appointment.client.phone, smsMessage);
+
+        // WhatsApp hatırlatıcısı (SMS'e ek olarak, bağımsız çalışır)
+        sendAppointmentReminderWA({
+          phone: appointment.client.phone,
+          clientName: smsData.customerName,
+          serviceName: smsData.serviceName,
+          appointmentDate: appointment.appointmentDate,
+          staffName: smsData.staffName,
+          businessName: businessName
+        }).catch(err => console.error('❌ WA hatırlatma hatası:', err.message));
 
         if (smsResult.success || smsResult.skipped) {
           successful++;

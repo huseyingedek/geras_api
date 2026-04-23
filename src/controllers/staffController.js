@@ -12,7 +12,7 @@ const catchAsync = fn => {
 };
 
 const createStaff = catchAsync(async (req, res, next) => {
-  const { 
+  const {
     fullName,
     role,
     phone,
@@ -21,7 +21,8 @@ const createStaff = catchAsync(async (req, res, next) => {
     username,
     password,
     workingHours,
-    permissions
+    permissions,
+    monthlySalary,
   } = req.body;
   
   const accountId = req.user.accountId;
@@ -111,6 +112,7 @@ const createStaff = catchAsync(async (req, res, next) => {
         isActive: isActive !== false,
         userId: userId,
         ...(commissionRate !== undefined && commissionRate !== null && { commissionRate: parseFloat(commissionRate) }),
+        ...(monthlySalary !== undefined && monthlySalary !== null && monthlySalary !== '' && { monthlySalary: parseFloat(monthlySalary) }),
       }
     });
     
@@ -372,13 +374,14 @@ const getStaffById = catchAsync(async (req, res, next) => {
 
 const updateStaff = catchAsync(async (req, res, next) => {
   const { id } = req.params;
-  const { 
+  const {
     fullName,
     role,
     phone,
     email,
     isActive,
     commissionRate,
+    monthlySalary,
     workingHours,
     permissions
   } = req.body;
@@ -453,9 +456,10 @@ const updateStaff = catchAsync(async (req, res, next) => {
           ...(email && { email }),
           ...(isActive !== undefined && { isActive: isActive === true || isActive === 'true' }),
           ...(commissionRate !== undefined && commissionRate !== null && { commissionRate: parseFloat(commissionRate) }),
+          ...(monthlySalary !== undefined && monthlySalary !== null && monthlySalary !== '' && { monthlySalary: parseFloat(monthlySalary) }),
         }
       });
-      
+
       if (staff.userId && staff.user) {
         await tx.user.update({
           where: { id: staff.userId },

@@ -508,11 +508,19 @@ export const deleteExpense = async (req, res) => {
 export const getAllCategories = async (req, res) => {
   try {
     const { accountId } = req.user;
+    const { expenseType } = req.query; // 'staff' | 'vendor' | 'general' | undefined
 
     const categories = await prisma.expenseCategories.findMany({
       where: {
         AccountID: accountId,
-        IsActive: true
+        IsActive: true,
+        // expenseType verilmişse: o tipe ait VEYA herkese açık (null) kategorileri getir
+        ...(expenseType && {
+          OR: [
+            { ApplicableType: expenseType },
+            { ApplicableType: null },
+          ],
+        }),
       },
       include: {
         _count: {
@@ -545,7 +553,7 @@ export const getAllCategories = async (req, res) => {
 export const createCategory = async (req, res) => {
   try {
     const { accountId } = req.user;
-    const { categoryName, description } = req.body;
+    const { categoryName, description, applicableType } = req.body;
 
     if (!categoryName) {
       return res.status(400).json({
@@ -558,7 +566,8 @@ export const createCategory = async (req, res) => {
       data: {
         AccountID: accountId,
         CategoryName: categoryName,
-        Description: description || null
+        Description: description || null,
+        ApplicableType: applicableType || null,
       }
     });
 
@@ -625,7 +634,7 @@ export const updateCategory = async (req, res) => {
   try {
     const { accountId } = req.user;
     const { id } = req.params;
-    const { categoryName, description, isActive } = req.body;
+    const { categoryName, description, isActive, applicableType } = req.body;
 
     const category = await prisma.expenseCategories.findFirst({
       where: {
@@ -648,7 +657,8 @@ export const updateCategory = async (req, res) => {
       data: {
         ...(categoryName && { CategoryName: categoryName }),
         ...(description !== undefined && { Description: description }),
-        ...(isActive !== undefined && { IsActive: isActive })
+        ...(isActive !== undefined && { IsActive: isActive }),
+        ...(applicableType !== undefined && { ApplicableType: applicableType || null }),
       }
     });
 

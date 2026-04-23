@@ -16,6 +16,7 @@ import reportRoutes from './reportRoutes.js';
 import planRoutes from './planRoutes.js';
 import chatRoutes from './chatRoutes.js';
 import bookingRoutes from './bookingRoutes.js'; // Public online randevu
+import whatsappRoutes from './whatsappRoutes.js'; // WhatsApp Business API
 
 const router = express.Router();
 
@@ -39,6 +40,7 @@ router.use('/reports', reportRoutes);
 router.use('/plans', planRoutes);
 router.use('/chat', chatRoutes);
 router.use('/booking', bookingRoutes); // Public online randevu (auth yok)
+router.use('/whatsapp', whatsappRoutes); // WhatsApp Business webhook + API
 router.use('/', clientNotesRoutes); // Client notes routes
 
 export default router; 
