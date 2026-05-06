@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma.js';
 import { sendSMS, prepareAppointmentSMS, prepareAppointmentCancelSMS, prepareAppointmentUpdateSMS } from '../utils/smsService.js';
 import { getPlanLimitError } from '../utils/planLimitChecker.js';
+import { sendAppointmentConfirmationWA, sendAppointmentCancellationWA } from '../utils/whatsappService.js';
 
 // Tekrarlayan randevu tarih hesaplama yardımcısı
 const getNextRecurrenceDate = (baseDate, type, multiplier) => {
@@ -343,6 +344,17 @@ export const createQuickAppointment = async (req, res) => {
         } else {
           console.log('ℹ️ SMS gönderilmedi: İşletme SMS servisi kapalı');
         }
+
+        // ✅ WHATSAPP ONAY MESAJI (SMS'den bağımsız, hata sessizce yutulur)
+        sendAppointmentConfirmationWA({
+          phone,
+          clientName: `${firstName} ${lastName}`,
+          serviceName: service.serviceName,
+          appointmentDate,
+          staffName: staff.fullName,
+          businessName: account?.businessName || 'Bizim İşletme'
+        }).catch(err => console.error('❌ WA onay hatası (hızlı randevu):', err.message));
+
       } catch (smsError) {
         console.error('❌ SMS gönderme işlemi hatası:', smsError);
         // SMS hatası randevu oluşturma işlemini engellemez
@@ -703,6 +715,17 @@ export const createAppointment = async (req, res) => {
           } else {
             console.error('❌ SMS gönderme hatası:', smsResult.error);
           }
+
+          // ✅ WHATSAPP ONAY MESAJI
+          sendAppointmentConfirmationWA({
+            phone: appointment.client.phone,
+            clientName: `${appointment.client.firstName} ${appointment.client.lastName}`,
+            serviceName: smsData.serviceName,
+            appointmentDate,
+            staffName: appointment.staff?.fullName || '',
+            businessName: account?.businessName || 'Bizim İşletme'
+          }).catch(err => console.error('❌ WA onay hatası (randevu):', err.message));
+
         } else {
           console.log('ℹ️ SMS gönderilmedi: İşletme SMS servisi kapalı');
         }
@@ -1225,6 +1248,16 @@ export const updateAppointment = async (req, res) => {
           } else {
             console.error('❌ Randevu iptal SMS hatası:', smsResult.error);
           }
+
+          // ✅ WHATSAPP İPTAL MESAJI
+          sendAppointmentCancellationWA({
+            phone: result.client.phone,
+            clientName: `${result.client.firstName} ${result.client.lastName}`,
+            serviceName: result.service?.serviceName || 'Randevu',
+            appointmentDate: result.appointmentDate,
+            businessName: account.businessName
+          }).catch(err => console.error('❌ WA iptal hatası:', err.message));
+
         } else {
           console.log('ℹ️ İptal SMS gönderilmedi: İşletme SMS servisi kapalı');
         }
@@ -1258,6 +1291,17 @@ export const updateAppointment = async (req, res) => {
           } else {
             console.error('❌ Randevu onay SMS hatası:', smsResult.error);
           }
+
+          // ✅ WHATSAPP ONAY MESAJI (Online randevu onaylandı)
+          sendAppointmentConfirmationWA({
+            phone: result.client.phone,
+            clientName: `${result.client.firstName} ${result.client.lastName}`,
+            serviceName: result.service?.serviceName || 'Randevu',
+            appointmentDate: result.appointmentDate,
+            staffName: result.staff?.fullName || '',
+            businessName: account.businessName
+          }).catch(err => console.error('❌ WA onay hatası (online randevu):', err.message));
+
         } else {
           console.log('ℹ️ Onay SMS gönderilmedi: İşletme SMS servisi kapalı');
         }

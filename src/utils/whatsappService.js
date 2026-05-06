@@ -1,21 +1,27 @@
 import axios from 'axios';
+import prisma from '../lib/prisma.js';
 
-const WA_ENABLED = (process.env.WHATSAPP_ENABLED || 'false').toLowerCase() === 'true';
-const WA_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || null;
-const WA_PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || null;
-const WA_API_VERSION = process.env.WHATSAPP_API_VERSION || 'v25.0';
+// ─── 360dialog API sabitleri ──────────────────────────────────────────────────
+const DIALOG360_BASE_URL = 'https://waba.360dialog.io/v1/messages';
+const DIALOG360_PARTNER_ID = process.env.DIALOG360_PARTNER_ID || null;
+const DIALOG360_PARTNER_TOKEN = process.env.DIALOG360_PARTNER_TOKEN || null;
+const DIALOG360_CALLBACK_URL = process.env.DIALOG360_CALLBACK_URL || 'https://api.gerasonline.com/api/whatsapp/360dialog/callback';
 
-if (WA_ENABLED && WA_TOKEN && WA_PHONE_ID) {
-  console.log('✅ WhatsApp Business API servisi aktif');
-} else if (WA_ENABLED) {
-  console.warn('⚠️ WhatsApp aktif ama credentials eksik: WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID');
-}
+// ─── Global fallback (tek numara modu, eski yapı) ────────────────────────────
+// Bunlar artık sadece fallback — asıl kullanım per-salon
+const WA_GLOBAL_API_KEY = process.env.WHATSAPP_ACCESS_TOKEN || null;
+const WA_GLOBAL_CHANNEL_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || null;
+
+console.log(DIALOG360_PARTNER_ID
+  ? `✅ 360dialog Partner modu aktif (Partner ID: ${DIALOG360_PARTNER_ID})`
+  : '⚠️ 360dialog Partner ID eksik — DIALOG360_PARTNER_ID env gerekli'
+);
 
 /**
- * Telefon numarasını WhatsApp formatına çevir (başında + olmadan)
- * Örn: 05354676801 → 905354676801
+ * Telefon numarasını WhatsApp formatına çevir
+ * 05354676801 → 905354676801
  */
-const formatWAPhone = (phone) => {
+export const formatWAPhone = (phone) => {
   if (!phone) return null;
   let cleaned = phone.replace(/\D/g, '');
   if (cleaned.startsWith('0')) cleaned = '90' + cleaned.slice(1);
@@ -27,7 +33,7 @@ const formatWAPhone = (phone) => {
  * Tarih + saati Türkçe formatta döndür
  * Örn: "Çarşamba, 23 Nisan 2026 - 14:30"
  */
-const formatAppointmentDateTime = (date) => {
+export const formatAppointmentDateTime = (date) => {
   const d = new Date(date);
   const days = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
   const months = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
@@ -42,13 +48,42 @@ const formatAppointmentDateTime = (date) => {
 };
 
 /**
- * Meta Cloud API'ye istek gönder
+ * Salon'un WA kimlik bilgilerini getir
+ * 1) Salon'un kendi 360dialog API key'i varsa onu kullan
+ * 2) Yoksa global fallback
  */
-const callMetaAPI = async (payload) => {
-  const url = `https://graph.facebook.com/${WA_API_VERSION}/${WA_PHONE_ID}/messages`;
-  const response = await axios.post(url, payload, {
+const getWACredentials = async (accountId) => {
+  if (accountId) {
+    try {
+      const account = await prisma.accounts.findUnique({
+        where: { id: accountId },
+        select: { waEnabled: true, waConnected: true, waApiKey: true, waChannelId: true }
+      });
+
+      if (account?.waEnabled && account?.waConnected && account?.waApiKey) {
+        return { apiKey: account.waApiKey, channelId: account.waChannelId, source: 'per-salon' };
+      }
+    } catch (err) {
+      console.error('WA credentials DB hatası:', err.message);
+    }
+  }
+
+  // Global fallback (tek numara modu)
+  if (WA_GLOBAL_API_KEY && WA_GLOBAL_CHANNEL_ID) {
+    return { apiKey: WA_GLOBAL_API_KEY, channelId: WA_GLOBAL_CHANNEL_ID, source: 'global' };
+  }
+
+  return null;
+};
+
+/**
+ * 360dialog API'ye mesaj gönder
+ * 360dialog: Authorization header D360-API-KEY
+ */
+const call360dialogAPI = async (apiKey, payload) => {
+  const response = await axios.post(DIALOG360_BASE_URL, payload, {
     headers: {
-      'Authorization': `Bearer ${WA_TOKEN}`,
+      'D360-API-KEY': apiKey,
       'Content-Type': 'application/json'
     },
     timeout: 10000
@@ -57,13 +92,19 @@ const callMetaAPI = async (payload) => {
 };
 
 /**
- * Şablon mesajı gönder (outbound - 24 saat penceresi dışında da çalışır)
- * Meta onaylı template gerektirir
+ * WhatsApp şablon mesajı gönder (outbound — 24h penceresi dışında da çalışır)
+ * @param {string} to          - telefon numarası
+ * @param {string} templateName - Meta onaylı şablon adı
+ * @param {string} languageCode - dil kodu ('tr')
+ * @param {Array}  components  - şablon değişkenleri
+ * @param {number} accountId   - salon ID (per-salon key için)
  */
-export const sendWhatsAppTemplate = async (to, templateName, languageCode = 'tr', components = []) => {
+export const sendWhatsAppTemplate = async (to, templateName, languageCode = 'tr', components = [], accountId = null) => {
   try {
-    if (!WA_ENABLED) return { success: false, skipped: true, reason: 'WA_DISABLED' };
-    if (!WA_TOKEN || !WA_PHONE_ID) return { success: false, skipped: true, reason: 'WA_NOT_CONFIGURED' };
+    const creds = await getWACredentials(accountId);
+    if (!creds) {
+      return { success: false, skipped: true, reason: 'WA_NOT_CONFIGURED' };
+    }
 
     const phone = formatWAPhone(to);
     if (!phone) return { success: false, error: 'Geçersiz telefon numarası' };
@@ -79,23 +120,25 @@ export const sendWhatsAppTemplate = async (to, templateName, languageCode = 'tr'
       }
     };
 
-    const result = await callMetaAPI(payload);
-    console.log(`✅ WhatsApp template gönderildi → ${phone} (${templateName})`);
+    const result = await call360dialogAPI(creds.apiKey, payload);
+    console.log(`✅ WA template gönderildi [${creds.source}] → ${phone} (${templateName})`);
     return { success: true, messageId: result.messages?.[0]?.id, data: result };
   } catch (error) {
     const errMsg = error.response?.data?.error?.message || error.message;
-    console.error(`❌ WhatsApp template hatası (${to}):`, errMsg);
+    console.error(`❌ WA template hatası (${to}):`, errMsg);
     return { success: false, error: errMsg };
   }
 };
 
 /**
- * Serbest metin mesajı gönder (sadece 24 saat içinde - müşteri ilk yazmış olmalı)
+ * Serbest metin mesajı gönder (sadece 24h içinde — müşteri ilk yazmış olmalı)
  */
-export const sendWhatsAppText = async (to, message) => {
+export const sendWhatsAppText = async (to, message, accountId = null) => {
   try {
-    if (!WA_ENABLED) return { success: false, skipped: true, reason: 'WA_DISABLED' };
-    if (!WA_TOKEN || !WA_PHONE_ID) return { success: false, skipped: true, reason: 'WA_NOT_CONFIGURED' };
+    const creds = await getWACredentials(accountId);
+    if (!creds) {
+      return { success: false, skipped: true, reason: 'WA_NOT_CONFIGURED' };
+    }
 
     const phone = formatWAPhone(to);
     if (!phone) return { success: false, error: 'Geçersiz telefon numarası' };
@@ -107,31 +150,27 @@ export const sendWhatsAppText = async (to, message) => {
       text: { body: message }
     };
 
-    const result = await callMetaAPI(payload);
-    console.log(`✅ WhatsApp text gönderildi → ${phone}`);
+    const result = await call360dialogAPI(creds.apiKey, payload);
+    console.log(`✅ WA text gönderildi [${creds.source}] → ${phone}`);
     return { success: true, messageId: result.messages?.[0]?.id };
   } catch (error) {
     const errMsg = error.response?.data?.error?.message || error.message;
-    console.error(`❌ WhatsApp text hatası (${to}):`, errMsg);
+    console.error(`❌ WA text hatası (${to}):`, errMsg);
     return { success: false, error: errMsg };
   }
 };
 
 /* ─────────────────────────────────────────────
-   HAZIR MESAJ FORMATLARI
+   HAZIR MESAJ FORMATLARI (per-salon accountId ile)
 ───────────────────────────────────────────── */
 
 /**
- * Randevu onay mesajı — template: "appointment_confirmation"
- * Template body örneği (Meta'da oluşturulacak):
- * "Merhaba {{1}}, {{2}} için randevunuz onaylandı.
- *  Tarih: {{3}}
- *  Uzman: {{4}}
- *  Salon: {{5}}"
+ * Randevu onay mesajı
+ * Template: "appointment_confirmation"
+ * Body: "Merhaba {{1}}, {{2}} için randevunuz onaylandı. Tarih: {{3}} | Uzman: {{4}} | Salon: {{5}}"
  */
-export const sendAppointmentConfirmationWA = async ({ phone, clientName, serviceName, appointmentDate, staffName, businessName }) => {
+export const sendAppointmentConfirmationWA = async ({ phone, clientName, serviceName, appointmentDate, staffName, businessName, accountId = null }) => {
   const dateStr = formatAppointmentDateTime(appointmentDate);
-
   return sendWhatsAppTemplate(phone, 'appointment_confirmation', 'tr', [
     {
       type: 'body',
@@ -143,19 +182,16 @@ export const sendAppointmentConfirmationWA = async ({ phone, clientName, service
         { type: 'text', text: businessName }
       ]
     }
-  ]);
+  ], accountId);
 };
 
 /**
- * Randevu hatırlatma mesajı — template: "appointment_reminder"
- * Template body örneği:
- * "Merhaba {{1}}, yarın {{2}} için randevunuz var.
- *  Tarih: {{3}}
- *  Uzman: {{4}}"
+ * Randevu hatırlatma mesajı
+ * Template: "appointment_reminder"
+ * Body: "Merhaba {{1}}, yarın {{2}} için randevunuz var. Tarih: {{3}} | Uzman: {{4}} | Salon: {{5}}"
  */
-export const sendAppointmentReminderWA = async ({ phone, clientName, serviceName, appointmentDate, staffName, businessName }) => {
+export const sendAppointmentReminderWA = async ({ phone, clientName, serviceName, appointmentDate, staffName, businessName, accountId = null }) => {
   const dateStr = formatAppointmentDateTime(appointmentDate);
-
   return sendWhatsAppTemplate(phone, 'appointment_reminder', 'tr', [
     {
       type: 'body',
@@ -167,18 +203,16 @@ export const sendAppointmentReminderWA = async ({ phone, clientName, serviceName
         { type: 'text', text: businessName }
       ]
     }
-  ]);
+  ], accountId);
 };
 
 /**
- * Randevu iptal mesajı — template: "appointment_cancelled"
- * Template body örneği:
- * "Merhaba {{1}}, {{2}} tarihindeki {{3}} randevunuz iptal edilmiştir.
- *  Sorularınız için bizi arayabilirsiniz."
+ * Randevu iptal mesajı
+ * Template: "appointment_cancelled"
+ * Body: "Merhaba {{1}}, {{2}} tarihindeki {{3}} randevunuz iptal edilmiştir. Sorularınız için bizi arayabilirsiniz."
  */
-export const sendAppointmentCancellationWA = async ({ phone, clientName, serviceName, appointmentDate, businessName }) => {
+export const sendAppointmentCancellationWA = async ({ phone, clientName, serviceName, appointmentDate, businessName, accountId = null }) => {
   const dateStr = formatAppointmentDateTime(appointmentDate);
-
   return sendWhatsAppTemplate(phone, 'appointment_cancelled', 'tr', [
     {
       type: 'body',
@@ -188,7 +222,78 @@ export const sendAppointmentCancellationWA = async ({ phone, clientName, service
         { type: 'text', text: serviceName }
       ]
     }
-  ]);
+  ], accountId);
 };
 
-export { formatWAPhone, formatAppointmentDateTime };
+/* ─────────────────────────────────────────────
+   360dialog PARTNER CONNECT FLOW
+───────────────────────────────────────────── */
+
+/**
+ * Salon için 360dialog Connect URL üret
+ * Salon bu URL'ye yönlendirilir, 360dialog'da numarasını bağlar,
+ * sonra callback URL'e geri döner.
+ */
+export const generate360dialogConnectUrl = (accountId) => {
+  if (!DIALOG360_PARTNER_ID) {
+    throw new Error('DIALOG360_PARTNER_ID env değişkeni eksik');
+  }
+  const params = new URLSearchParams({
+    redirect_url: DIALOG360_CALLBACK_URL,
+    state: String(accountId)
+  });
+  return `https://hub.360dialog.com/dashboard/app/${DIALOG360_PARTNER_ID}/permissions?${params.toString()}`;
+};
+
+/**
+ * 360dialog callback — salon bağlantıyı tamamladığında burası çağrılır
+ * client ve channels parametreleri gelir, Partner API'den API key alınır
+ */
+export const handle360dialogCallback = async (clientId, channels, accountId) => {
+  if (!DIALOG360_PARTNER_TOKEN) {
+    throw new Error('DIALOG360_PARTNER_TOKEN env değişkeni eksik');
+  }
+
+  // Partner API'den her kanal için API key al
+  const channelData = Array.isArray(channels) ? channels : JSON.parse(channels || '[]');
+  if (!channelData.length) {
+    throw new Error('Kanal bilgisi gelmedi');
+  }
+
+  const channel = channelData[0]; // İlk kanalı kullan
+  const wabaId = channel.waba_id || channel.id;
+
+  // API key oluştur
+  const apiKeyRes = await axios.post(
+    `https://hub.360dialog.com/api/v2/partners/${DIALOG360_PARTNER_ID}/channels/${wabaId}/api-keys`,
+    {},
+    {
+      headers: {
+        'Authorization': `Bearer ${DIALOG360_PARTNER_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 15000
+    }
+  );
+
+  const apiKey = apiKeyRes.data?.api_key || apiKeyRes.data?.data?.api_key;
+  if (!apiKey) throw new Error('API key alınamadı');
+
+  const phoneNumber = channel.phone_number || null;
+
+  // DB'ye kaydet
+  await prisma.accounts.update({
+    where: { id: parseInt(accountId) },
+    data: {
+      waEnabled: true,
+      waConnected: true,
+      waApiKey: apiKey,
+      waChannelId: wabaId,
+      waClientId: clientId,
+      waPhoneNumber: phoneNumber
+    }
+  });
+
+  console.log(`✅ 360dialog bağlandı — Account ${accountId}, Phone: ${phoneNumber}`);
+  return { apiKey, channelId: wabaId, phoneNumber };
+};

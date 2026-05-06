@@ -23,6 +23,7 @@ const createStaff = catchAsync(async (req, res, next) => {
     workingHours,
     permissions,
     monthlySalary,
+    commissionRate,
   } = req.body;
   
   const accountId = req.user.accountId;

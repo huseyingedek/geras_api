@@ -63,7 +63,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       imgSrc: ["'self'", 'data:', 'https:'],
-      connectSrc: ["'self'", 'https://wisorsoft.xyz', 'https://www.wisorsoft.xyz'],
+      connectSrc: ["'self'", 'https://app.gerasonline.com', 'https://www.gerasonline.com'],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"]
     }
