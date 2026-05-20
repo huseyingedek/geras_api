@@ -166,12 +166,13 @@ const processAccountReminders = async (accountId, businessName) => {
 
         // WhatsApp hatırlatıcısı (SMS'e ek olarak, bağımsız çalışır)
         sendAppointmentReminderWA({
-          phone: appointment.client.phone,
-          clientName: smsData.customerName,
-          serviceName: smsData.serviceName,
+          phone:           appointment.client.phone,
+          clientName:      smsData.customerName,
+          serviceName:     smsData.serviceName,
           appointmentDate: appointment.appointmentDate,
-          staffName: smsData.staffName,
-          businessName: businessName
+          staffName:       smsData.staffName,
+          businessName:    businessName,
+          accountId:       accountId
         }).catch(err => console.error('❌ WA hatırlatma hatası:', err.message));
 
         if (smsResult.success || smsResult.skipped) {

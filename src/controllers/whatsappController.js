@@ -1,11 +1,19 @@
+import axios from 'axios';
 import prisma from '../lib/prisma.js';
-import { sendWhatsAppText, generate360dialogConnectUrl, handle360dialogCallback } from '../utils/whatsappService.js';
+import { sendWhatsAppText, formatAppointmentDateTime } from '../utils/whatsappService.js';
 
-const WA_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'geras_webhook_verify_2026';
+const WA_VERIFY_TOKEN  = process.env.WHATSAPP_VERIFY_TOKEN || 'geras_webhook_verify_2026';
+const META_APP_ID      = process.env.META_APP_ID;
+const META_APP_SECRET  = process.env.META_APP_SECRET;
+const META_API_VERSION = process.env.WHATSAPP_API_VERSION || 'v25.0';
+
+/* ─────────────────────────────────────────────
+   WEBHOOK
+───────────────────────────────────────────── */
 
 /**
  * GET /api/whatsapp/webhook
- * Meta webhook doğrulama
+ * Meta webhook doğrulama (uygulama ilk kurulurken bir kez çalışır)
  */
 export const verifyWebhook = (req, res) => {
   const mode      = req.query['hub.mode'];
@@ -13,36 +21,48 @@ export const verifyWebhook = (req, res) => {
   const challenge = req.query['hub.challenge'];
 
   if (mode === 'subscribe' && token === WA_VERIFY_TOKEN) {
-    console.log('✅ WhatsApp webhook doğrulandı');
     return res.status(200).send(challenge);
   }
 
-  console.warn('❌ WhatsApp webhook doğrulama başarısız — token uyuşmuyor');
   return res.status(403).json({ error: 'Forbidden' });
 };
 
 /**
  * POST /api/whatsapp/webhook
- * Gelen WhatsApp mesajları (360dialog da aynı format gönderir)
+ * Meta'dan gelen mesajları işle.
+ * metadata.phone_number_id ile mesajın hangi salona ait olduğu bulunur.
  */
 export const receiveWebhook = async (req, res) => {
+  // Meta 200 almazsa webhook'u tekrar gönderir — önce cevap ver
   res.status(200).send('EVENT_RECEIVED');
 
   try {
     const body = req.body;
-    // 360dialog ve Meta aynı payload formatını kullanır
     if (body.object !== 'whatsapp_business_account') return;
 
     for (const entry of (body.entry || [])) {
       for (const change of (entry.changes || [])) {
         if (change.field !== 'messages') continue;
 
-        const value    = change.value;
-        const messages = value?.messages || [];
-        const contacts = value?.contacts || [];
+        const value         = change.value;
+        const messages      = value?.messages || [];
+        const contacts      = value?.contacts || [];
+        const phoneNumberId = value?.metadata?.phone_number_id;
+
+        if (!phoneNumberId) continue;
+
+        // Mesajın hangi salona ait olduğunu phone_number_id üzerinden bul
+        const account = await prisma.accounts.findFirst({
+          where: { waChannelId: phoneNumberId, waConnected: true }
+        });
+
+        if (!account) {
+          console.warn(`⚠️ Tanımsız phone_number_id: ${phoneNumberId}`);
+          continue;
+        }
 
         for (const message of messages) {
-          await handleIncomingMessage(message, contacts, value.metadata);
+          await handleIncomingMessage(message, contacts, account);
         }
       }
     }
@@ -52,110 +72,113 @@ export const receiveWebhook = async (req, res) => {
 };
 
 /**
- * Gelen mesajı işle
+ * Gelen mesajı tipine göre yönlendir
  */
-const handleIncomingMessage = async (message, contacts, metadata) => {
+const handleIncomingMessage = async (message, contacts, account) => {
   const from       = message.from;
   const msgType    = message.type;
   const contact    = contacts.find(c => c.wa_id === from);
-  const senderName = contact?.profile?.name || 'Bilinmeyen';
-
-  console.log(`📩 WhatsApp mesajı [${from}] (${senderName}): ${msgType}`);
+  const senderName = contact?.profile?.name || 'Müşteri';
 
   if (msgType === 'text') {
     const text = message.text?.body?.toLowerCase()?.trim() || '';
-    await handleTextMessage(from, senderName, text);
-  } else if (msgType === 'interactive') {
-    const reply = message.interactive?.button_reply?.id || message.interactive?.list_reply?.id;
-    console.log(`📋 Interactive yanıt: ${reply}`);
+    await handleTextMessage(from, senderName, text, account);
   }
 };
 
 /**
- * Metin mesajı — anahtar kelime yanıtları
+ * Anahtar kelime tabanlı yanıtlar
  */
-const handleTextMessage = async (from, senderName, text) => {
+const handleTextMessage = async (from, senderName, text, account) => {
   if (text.includes('randevu') && (text.includes('sorgula') || text.includes('ne zaman') || text.includes('bak'))) {
-    await queryAppointmentByPhone(from);
+    await queryAppointmentByPhone(from, account);
     return;
   }
 
   if (text.includes('iptal')) {
-    await sendWhatsAppText(from,
-      '❌ Randevu iptali için lütfen salonumuzu arayın veya randevu sistemi üzerinden işlem yapın.\n\n📞 Bizi arayın ve randevunuzu iptal edelim.'
+    await sendWhatsAppText(
+      from,
+      `❌ Randevu iptali için lütfen *${account.businessName}* ile iletişime geçin.`,
+      account.id
     );
     return;
   }
 
   if (text.match(/^(merhaba|selam|hey|hi|hello|iyi günler)/)) {
-    await sendWhatsAppText(from,
-      `Merhaba ${senderName}! 👋\n\nBen GERAS Online Randevu asistanıyım.\n\n` +
-      `Aşağıdaki konularda yardımcı olabilirim:\n` +
+    await sendWhatsAppText(
+      from,
+      `Merhaba ${senderName}! 👋\n\n` +
+      `*${account.businessName}* randevu asistanıyım.\n\n` +
       `• *randevu sorgula* — aktif randevunuzu görün\n` +
-      `• *iptal* — randevu iptali için yönlendirme\n\n` +
-      `Online randevu almak için: app.gerasonline.com/booking`
+      `• *iptal* — randevu iptali için yönlendirme`,
+      account.id
     );
     return;
   }
-
-  console.log(`ℹ️ WhatsApp işlenmeyen mesaj: "${text}" — ${from}`);
 };
 
 /**
- * Telefon numarasına göre yaklaşan randevuyu bul
+ * Telefon numarasına göre o salondaki yaklaşan randevuyu bul
  */
-const queryAppointmentByPhone = async (waPhone) => {
+const queryAppointmentByPhone = async (waPhone, account) => {
   try {
     const phoneVariants = [
       waPhone,
       '0' + waPhone.slice(2),
-      '+' + waPhone,
+      '+' + waPhone
     ];
 
     const now    = new Date();
     const client = await prisma.clients.findFirst({
-      where: { phone: { in: phoneVariants } }
+      where: {
+        phone:     { in: phoneVariants },
+        accountId: account.id
+      }
     });
 
     if (!client) {
-      await sendWhatsAppText(waPhone,
-        'Sisteme kayıtlı bir hesap bulunamadı. Lütfen salonumuzla iletişime geçin.'
+      await sendWhatsAppText(
+        waPhone,
+        `*${account.businessName}* sisteminde kayıtlı bir hesap bulunamadı.`,
+        account.id
       );
       return;
     }
 
     const appointment = await prisma.appointments.findFirst({
       where: {
-        clientId: client.id,
+        clientId:        client.id,
+        accountId:       account.id,
         appointmentDate: { gte: now },
-        status: 'PLANNED'
+        status:          'PLANNED'
       },
       orderBy: { appointmentDate: 'asc' },
       include: {
         service: { select: { serviceName: true } },
-        staff:   { select: { fullName: true } },
-        account: { select: { businessName: true } }
+        staff:   { select: { fullName: true } }
       }
     });
 
     if (!appointment) {
-      await sendWhatsAppText(waPhone,
-        'Yaklaşan planlanmış bir randevunuz bulunmuyor.\n\n' +
-        'Online randevu almak için: app.gerasonline.com/booking'
+      await sendWhatsAppText(
+        waPhone,
+        'Yaklaşan planlanmış bir randevunuz bulunmuyor.',
+        account.id
       );
       return;
     }
 
-    const { formatAppointmentDateTime } = await import('../utils/whatsappService.js');
     const dateStr = formatAppointmentDateTime(appointment.appointmentDate);
 
-    await sendWhatsAppText(waPhone,
+    await sendWhatsAppText(
+      waPhone,
       `📅 *Yaklaşan Randevunuz*\n\n` +
       `👤 İsim: ${client.firstName} ${client.lastName}\n` +
       `✂️ Hizmet: ${appointment.service.serviceName}\n` +
       `👩 Uzman: ${appointment.staff.fullName}\n` +
       `🕐 Tarih: ${dateStr}\n` +
-      `🏢 Salon: ${appointment.account.businessName}`
+      `🏢 Salon: ${account.businessName}`,
+      account.id
     );
   } catch (error) {
     console.error('❌ Randevu sorgulama hatası:', error);
@@ -163,50 +186,111 @@ const queryAppointmentByPhone = async (waPhone) => {
 };
 
 /* ─────────────────────────────────────────────
-   360dialog CONNECT FLOW
+   META EMBEDDED SIGNUP — BAĞLANTI AKIŞI
+
+   Akış:
+   1. Frontend'de Meta Embedded Signup popup açılır (FB SDK)
+   2. Salon Meta hesabıyla giriş yapar, WhatsApp Business'ını seçer
+   3. Meta frontend'e kısa ömürlü bir `code` döner
+   4. Frontend bu code'u bu endpoint'e gönderir
+   5. Backend code → access_token çevirir
+   6. Backend token ile phone_number_id'yi alır
+   7. DB'ye kaydeder
 ───────────────────────────────────────────── */
 
 /**
- * GET /api/whatsapp/connect
- * Salon için 360dialog bağlantı URL'sini üretir ve yönlendirir
- * Sadece OWNER yetkili kullanıcılar
+ * POST /api/whatsapp/connect
+ * Embedded Signup'tan gelen code ile bağlantıyı tamamla
  */
-export const initWhatsAppConnect = async (req, res) => {
+export const connectWhatsApp = async (req, res) => {
   try {
     const { accountId } = req.user;
-    const connectUrl = generate360dialogConnectUrl(accountId);
-    res.json({ success: true, connectUrl });
-  } catch (error) {
-    console.error('❌ 360dialog connect URL hatası:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
+    const { code }      = req.body;
 
-/**
- * GET /api/whatsapp/360dialog/callback
- * 360dialog, salon numarayı bağlayınca buraya yönlendirir
- * Query: client, channels (JSON array), state (accountId)
- *
- * PUBLIC endpoint — auth yok (360dialog yönlendirmesi)
- * Frontend sayfasına yönlendiririz, o sayfada bilgi gösterilir
- */
-export const handle360dialogCallbackEndpoint = async (req, res) => {
-  try {
-    const { client: clientId, channels, state: accountId } = req.query;
-
-    if (!clientId || !accountId) {
-      return res.redirect(`https://app.gerasonline.com/settings/whatsapp?error=missing_params`);
+    if (!code) {
+      return res.status(400).json({ success: false, message: 'code zorunlu' });
     }
 
-    await handle360dialogCallback(clientId, channels, accountId);
+    if (!META_APP_ID || !META_APP_SECRET) {
+      return res.status(500).json({
+        success: false,
+        message: 'META_APP_ID veya META_APP_SECRET .env dosyasında tanımlı değil'
+      });
+    }
 
-    // Frontend'e başarı ile yönlendir
-    res.redirect(`https://app.gerasonline.com/settings/whatsapp?success=1&phone=connected`);
+    // 1. Code → Access Token
+    const tokenRes = await axios.get(
+      `https://graph.facebook.com/${META_API_VERSION}/oauth/access_token`,
+      { params: { client_id: META_APP_ID, client_secret: META_APP_SECRET, code } }
+    );
+
+    const accessToken = tokenRes.data?.access_token;
+    if (!accessToken) {
+      return res.status(400).json({ success: false, message: 'Access token alınamadı' });
+    }
+
+    // 2. Bağlanan hesabın WhatsApp Business Account'larını getir
+    const wabaRes = await axios.get(
+      `https://graph.facebook.com/${META_API_VERSION}/me/whatsapp_business_accounts`,
+      { params: { access_token: accessToken } }
+    );
+
+    const wabas = wabaRes.data?.data || [];
+    if (!wabas.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Bu Meta hesabına bağlı WhatsApp Business Account bulunamadı'
+      });
+    }
+
+    const wabaId = wabas[0].id;
+
+    // 3. WABA'ya bağlı telefon numarasını getir
+    const phoneRes = await axios.get(
+      `https://graph.facebook.com/${META_API_VERSION}/${wabaId}/phone_numbers`,
+      { params: { access_token: accessToken } }
+    );
+
+    const phoneNumbers = phoneRes.data?.data || [];
+    if (!phoneNumbers.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Bu WABA'ya bağlı telefon numarası bulunamadı"
+      });
+    }
+
+    const phoneNumberId   = phoneNumbers[0].id;
+    const displayPhone    = phoneNumbers[0].display_phone_number;
+
+    // 4. DB'ye kaydet
+    await prisma.accounts.update({
+      where: { id: accountId },
+      data: {
+        waEnabled:     true,
+        waConnected:   true,
+        waApiKey:      accessToken,   // Meta access token
+        waChannelId:   phoneNumberId, // Meta phone_number_id
+        waPhoneNumber: displayPhone,
+        waClientId:    wabaId         // WABA ID (referans)
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'WhatsApp başarıyla bağlandı',
+      data: { phoneNumber: displayPhone }
+    });
+
   } catch (error) {
-    console.error('❌ 360dialog callback hatası:', error);
-    res.redirect(`https://app.gerasonline.com/settings/whatsapp?error=${encodeURIComponent(error.message)}`);
+    const errMsg = error.response?.data?.error?.message || error.message;
+    console.error('❌ WhatsApp connect hatası:', errMsg);
+    res.status(500).json({ success: false, message: errMsg });
   }
 };
+
+/* ─────────────────────────────────────────────
+   DURUM & YÖNETİM
+───────────────────────────────────────────── */
 
 /**
  * GET /api/whatsapp/status
@@ -218,20 +302,18 @@ export const getWhatsAppStatus = async (req, res) => {
     const account = await prisma.accounts.findUnique({
       where: { id: accountId },
       select: {
-        waEnabled: true,
-        waConnected: true,
-        waPhoneNumber: true,
-        waChannelId: true
+        waEnabled:     true,
+        waConnected:   true,
+        waPhoneNumber: true
       }
     });
 
     res.json({
       success: true,
       data: {
-        enabled:     account?.waEnabled ?? false,
-        connected:   account?.waConnected ?? false,
-        phoneNumber: account?.waPhoneNumber ?? null,
-        channelId:   account?.waChannelId ?? null
+        enabled:     account?.waEnabled     ?? false,
+        connected:   account?.waConnected   ?? false,
+        phoneNumber: account?.waPhoneNumber ?? null
       }
     });
   } catch (error) {
@@ -241,15 +323,15 @@ export const getWhatsAppStatus = async (req, res) => {
 
 /**
  * PATCH /api/whatsapp/toggle
- * WA bildirimlerini aç/kapat (bağlı olmak zorunda)
+ * WA bildirimlerini aç/kapat (önce bağlı olmak gerekir)
  */
 export const toggleWhatsApp = async (req, res) => {
   try {
     const { accountId } = req.user;
-    const { enabled } = req.body;
+    const { enabled }   = req.body;
 
     const account = await prisma.accounts.findUnique({
-      where: { id: accountId },
+      where:  { id: accountId },
       select: { waConnected: true }
     });
 
@@ -262,7 +344,7 @@ export const toggleWhatsApp = async (req, res) => {
 
     await prisma.accounts.update({
       where: { id: accountId },
-      data: { waEnabled: enabled }
+      data:  { waEnabled: enabled }
     });
 
     res.json({
@@ -285,11 +367,11 @@ export const disconnectWhatsApp = async (req, res) => {
     await prisma.accounts.update({
       where: { id: accountId },
       data: {
-        waEnabled:    false,
-        waConnected:  false,
-        waApiKey:     null,
-        waChannelId:  null,
-        waClientId:   null,
+        waEnabled:     false,
+        waConnected:   false,
+        waApiKey:      null,
+        waChannelId:   null,
+        waClientId:    null,
         waPhoneNumber: null
       }
     });
@@ -301,14 +383,17 @@ export const disconnectWhatsApp = async (req, res) => {
 };
 
 /**
- * POST /api/whatsapp/test-send (sadece geliştirme)
+ * POST /api/whatsapp/test-send
+ * Test mesajı gönder — bağlı salon, yalnızca geliştirme ortamında kullan
  */
 export const testSendMessage = async (req, res) => {
   try {
     const { phone, message } = req.body;
+
     if (!phone || !message) {
       return res.status(400).json({ success: false, message: 'phone ve message zorunlu' });
     }
+
     const { accountId } = req.user;
     const result = await sendWhatsAppText(phone, message, accountId);
     res.json({ success: true, result });

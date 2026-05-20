@@ -282,6 +282,23 @@ Kod 5 dakika icin gecerlidir.`;
 };
 
 /**
+ * Musteri degerlendirme anketi SMS'i hazirla
+ * @param {object} data - { customerName, businessName, surveyUrl }
+ * @returns {string}
+ */
+export const prepareSurveySMS = ({ customerName, businessName, surveyUrl }) => {
+  return `Sayin ${customerName},
+
+${businessName} ziyaretiniz icin tesekkur ederiz!
+
+Hizmetimizi degerlendirmeniz bize cok yardimci olacaktir:
+${surveyUrl}
+
+Iyi gunler dileriz,
+${businessName}`;
+};
+
+/**
  * 6 haneli rastgele dogrulama kodu olustur
  * @returns {string}
  */

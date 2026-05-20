@@ -21,7 +21,9 @@ model Accounts {
   smsEnabled           Boolean               @default(true) @map("SMSEnabled")
   reminderEnabled      Boolean               @default(true) @map("ReminderEnabled")
   reminderHours        Int                   @default(24) @map("ReminderHours")
-  // WhatsApp (360dialog per-salon)
+  // Müşteri Değerlendirme Anketi
+  surveyEnabled        Boolean               @default(false) @map("SurveyEnabled")
+  // WhatsApp (Meta Cloud API per-salon)
   waEnabled            Boolean               @default(false) @map("WAEnabled")
   waConnected          Boolean               @default(false) @map("WAConnected")
   waPhoneNumber        String?               @map("WAPhoneNumber")
@@ -53,6 +55,7 @@ model Accounts {
   reference_sources    reference_sources[]
   clientNotes          ClientNotes[]
   subscriptionPayments SubscriptionPayment[]
+  appointmentReviews   AppointmentReview[]
 
   @@index([smsEnabled], map: "idx_accounts_sms_enabled")
   @@index([isDemoAccount, demoStatus], map: "idx_accounts_demo")
@@ -84,8 +87,29 @@ model Appointments {
   saleItem        SaleItems?        @relation(fields: [saleItemId], references: [id], onDelete: SetNull)
   service         Services?         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   staff           Staff             @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  review          AppointmentReview?
 
   @@map("Appointments")
+}
+
+model AppointmentReview {
+  id            Int          @id @default(autoincrement()) @map("ReviewID")
+  appointmentId Int          @unique @map("AppointmentID")
+  accountId     Int          @map("AccountID")
+  clientId      Int?         @map("ClientID")
+  token         String       @unique @map("Token")
+  rating        Int?         @map("Rating")         // 1-5
+  comment       String?      @map("Comment") @db.Text
+  smsSentAt     DateTime?    @map("SmsSentAt")
+  submittedAt   DateTime?    @map("SubmittedAt")
+  createdAt     DateTime     @default(now()) @map("CreatedAt")
+
+  appointment   Appointments @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  account       Accounts     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId], map: "idx_review_account")
+  @@index([token], map: "idx_review_token")
+  @@map("AppointmentReviews")
 }
 
 model Clients {

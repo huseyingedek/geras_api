@@ -17,6 +17,7 @@ import planRoutes from './planRoutes.js';
 import chatRoutes from './chatRoutes.js';
 import bookingRoutes from './bookingRoutes.js'; // Public online randevu
 import whatsappRoutes from './whatsappRoutes.js'; // WhatsApp Business API
+import surveyRoutes from './surveyRoutes.js';     // Müşteri Değerlendirme Anketi
 
 const router = express.Router();
 
@@ -41,6 +42,7 @@ router.use('/plans', planRoutes);
 router.use('/chat', chatRoutes);
 router.use('/booking', bookingRoutes); // Public online randevu (auth yok)
 router.use('/whatsapp', whatsappRoutes); // WhatsApp Business webhook + API
-router.use('/', clientNotesRoutes); // Client notes routes
+router.use('/', surveyRoutes);           // Survey (GET/POST /survey/:token) + Reviews (GET /reviews)
+router.use('/', clientNotesRoutes);      // Client notes routes
 
 export default router; 

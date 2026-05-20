@@ -14,11 +14,12 @@ export const getReminderSettings = async (req, res, next) => {
     // İşletmenin hatırlatma ayarlarını getir
     const account = await prisma.accounts.findUnique({
       where: { id: accountId },
-      select: { 
+      select: {
         smsEnabled: true,
         reminderEnabled: true,
         reminderHours: true,
-        businessName: true 
+        surveyEnabled: true,
+        businessName: true
       }
     });
 
@@ -29,9 +30,10 @@ export const getReminderSettings = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
-        smsEnabled: account.smsEnabled ?? true, // NULL ise varsayılan true
-        reminderEnabled: account.reminderEnabled ?? true, // NULL ise varsayılan true
-        reminderHours: account.reminderHours ?? 24, // NULL ise varsayılan 24
+        smsEnabled: account.smsEnabled ?? true,
+        reminderEnabled: account.reminderEnabled ?? true,
+        reminderHours: account.reminderHours ?? 24,
+        surveyEnabled: account.surveyEnabled ?? false,
         businessName: account.businessName
       },
       message: 'Hatırlatma ayarları başarıyla getirildi'
@@ -47,7 +49,7 @@ export const getReminderSettings = async (req, res, next) => {
 export const updateReminderSettings = async (req, res, next) => {
   try {
     const { accountId, role } = req.user;
-    const { smsEnabled, reminderEnabled, reminderHours } = req.body;
+    const { smsEnabled, reminderEnabled, reminderHours, surveyEnabled } = req.body;
 
     // Sadece OWNER ve ADMIN işletme ayarlarını değiştirebilir
     if (role !== 'OWNER' && role !== 'ADMIN') {
@@ -70,6 +72,7 @@ export const updateReminderSettings = async (req, res, next) => {
     if (smsEnabled !== undefined) updateData.smsEnabled = smsEnabled;
     if (reminderEnabled !== undefined) updateData.reminderEnabled = reminderEnabled;
     if (reminderHours !== undefined) updateData.reminderHours = reminderHours;
+    if (surveyEnabled !== undefined) updateData.surveyEnabled = surveyEnabled;
     updateData.updatedAt = new Date();
 
     const updatedAccount = await prisma.accounts.update({
@@ -81,6 +84,7 @@ export const updateReminderSettings = async (req, res, next) => {
         smsEnabled: true,
         reminderEnabled: true,
         reminderHours: true,
+        surveyEnabled: true,
         updatedAt: true
       }
     });

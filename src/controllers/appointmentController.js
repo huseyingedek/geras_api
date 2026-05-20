@@ -2,6 +2,7 @@ import prisma from '../lib/prisma.js';
 import { sendSMS, prepareAppointmentSMS, prepareAppointmentCancelSMS, prepareAppointmentUpdateSMS } from '../utils/smsService.js';
 import { getPlanLimitError } from '../utils/planLimitChecker.js';
 import { sendAppointmentConfirmationWA, sendAppointmentCancellationWA } from '../utils/whatsappService.js';
+import { createSurveyForAppointment } from '../services/surveyService.js';
 
 // Tekrarlayan randevu tarih hesaplama yardımcısı
 const getNextRecurrenceDate = (baseDate, type, multiplier) => {
@@ -1223,6 +1224,35 @@ export const updateAppointment = async (req, res) => {
 
       return updatedAppointment;
     });
+
+    // ✅ RANDEVU TAMAMLANDIĞINDA DEĞERLENDİRME ANKETİ SMS GÖNDER
+    if (newStatus === 'COMPLETED' && oldStatus !== 'COMPLETED') {
+      try {
+        const surveyAccount = await prisma.accounts.findUnique({
+          where: { id: accountId },
+          select: { surveyEnabled: true, smsEnabled: true, businessName: true }
+        });
+
+        if (surveyAccount?.surveyEnabled && surveyAccount?.smsEnabled) {
+          const customerName = result.client
+            ? `${result.client.firstName} ${result.client.lastName}`
+            : result.customerName;
+          const phone = result.client?.phone || null;
+
+          // Survey oluştur ve SMS gönder (hata ana akışı bloke etmez)
+          createSurveyForAppointment({
+            appointmentId: result.id,
+            accountId,
+            clientId: result.client?.id || null,
+            customerName,
+            phone,
+            businessName: surveyAccount.businessName
+          }).catch(err => console.error('❌ Survey oluşturma hatası:', err.message));
+        }
+      } catch (surveyError) {
+        console.error('❌ Survey tetikleme hatası:', surveyError);
+      }
+    }
 
     // ✅ RANDEVU İPTAL EDİLDİĞİNDE SMS BİLDİRİMİ GÖNDER (NO_SHOW için SMS yok)
     if (newStatus === 'CANCELLED' && oldStatus !== 'CANCELLED' && result.client?.phone) {
