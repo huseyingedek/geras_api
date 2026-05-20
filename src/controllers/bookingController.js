@@ -135,13 +135,11 @@ export const getBookingStaff = async (req, res) => {
 
     const serviceId = req.query.serviceId ? parseInt(req.query.serviceId) : null;
 
-    // Her zaman: en az 1 hizmet ataması olan personeller
+    // Tüm aktif personeller; serviceId varsa o hizmeti yapabilenleri filtrele
     const whereClause = {
       accountId,
       isActive: true,
-      staffServices: serviceId
-        ? { some: { serviceId } }          // Bu hizmeti yapabilen
-        : { some: {} },                    // Herhangi bir hizmet ataması olan
+      ...(serviceId ? { staffServices: { some: { serviceId } } } : {}),
     };
 
     const staff = await prisma.staff.findMany({
@@ -400,7 +398,7 @@ export const createBookingRequest = async (req, res) => {
     const accountId = parseInt(req.params.accountId);
     if (isNaN(accountId)) return sendError(res, 400, 'Geçersiz salon ID');
 
-    const { staffId, serviceId, date, time, customerName, customerPhone, clientId, saleId, saleItemId } =
+    const { staffId, serviceId, date, time, customerName, customerPhone, clientId, saleId, saleItemId, notes } =
       req.body;
 
     // Basit validasyon
@@ -506,7 +504,7 @@ export const createBookingRequest = async (req, res) => {
         customerName: customerName.trim(),
         appointmentDate,
         status: 'PENDING',
-        notes: `Online randevu — Tel: ${customerPhone}`,
+        notes: notes ? `Online randevu — Tel: ${customerPhone}\n${notes}` : `Online randevu — Tel: ${customerPhone}`,
       },
     });
 
