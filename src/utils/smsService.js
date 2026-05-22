@@ -156,10 +156,10 @@ const formatPhoneNumber = (phone) => {
 /**
  * Randevu bildirimi SMS'i hazırla
  * @param {object} appointmentData - Randevu bilgileri
- * @returns {string} - SMS mesajı
+ * @returns {string} - SMS mesajı (≤160 karakter)
  */
 export const prepareAppointmentSMS = (appointmentData) => {
-  const { customerName, appointmentDate, businessName } = appointmentData;
+  const { customerName, appointmentDate, businessName, mapUrl } = appointmentData;
 
   const date  = new Date(appointmentDate);
   const day   = String(date.getDate()).padStart(2, '0');
@@ -168,23 +168,18 @@ export const prepareAppointmentSMS = (appointmentData) => {
   const hour  = String(date.getHours()).padStart(2, '0');
   const min   = String(date.getMinutes()).padStart(2, '0');
 
+  const mapLine = mapUrl ? `\n\nKonum: ${mapUrl}` : '';
+
   return `Sayin ${customerName},
 
-${businessName} olarak randevunuzun olusturuldugunu bildiririz.
-
-Tarih: ${day}.${month}.${year}
-Saat : ${hour}:${min}
-
-Zamaninda gelmenizi rica eder, tercihleriniz icin tesekkur ederiz.
-
-Saygilarimizla,
-${businessName}`;
+${businessName} randevunuz olusturulmustur.
+Tarih: ${day}.${month}.${year} - ${hour}:${min}${mapLine}`;
 };
 
 /**
  * Randevu tarih/saat değişikliği bildirimi SMS'i hazırla
- * @param {object} data - { customerName, serviceName, oldDate, newDate, businessName }
- * @returns {string} - SMS mesajı
+ * @param {object} data - { customerName, oldDate, newDate, businessName }
+ * @returns {string} - SMS mesajı (≤160 karakter)
  */
 export const prepareAppointmentUpdateSMS = (data) => {
   const { customerName, oldDate, newDate, businessName } = data;
@@ -201,24 +196,18 @@ export const prepareAppointmentUpdateSMS = (data) => {
 
   return `Sayin ${customerName},
 
-${businessName} olarak randevunuzun guncellendigini bildiririz.
-
-Eski Tarih: ${fmt(oldDate)}
-Yeni Tarih: ${fmt(newDate)}
-
-Herhangi bir sorunuz icin bizimle iletisime gecebilirsiniz.
-
-Saygilarimizla,
-${businessName}`;
+${businessName} randevunuz guncellendi.
+Eski: ${fmt(oldDate)}
+Yeni: ${fmt(newDate)}`;
 };
 
 /**
  * Randevu iptal bildirimi SMS'i hazırla
  * @param {object} appointmentData - Randevu bilgileri
- * @returns {string} - SMS mesajı
+ * @returns {string} - SMS mesajı (≤160 karakter)
  */
 export const prepareAppointmentCancelSMS = (appointmentData) => {
-  const { customerName, appointmentDate, businessName } = appointmentData;
+  const { customerName, appointmentDate, businessName, businessPhone } = appointmentData;
 
   const date  = new Date(appointmentDate);
   const day   = String(date.getDate()).padStart(2, '0');
@@ -227,23 +216,20 @@ export const prepareAppointmentCancelSMS = (appointmentData) => {
   const hour  = String(date.getHours()).padStart(2, '0');
   const min   = String(date.getMinutes()).padStart(2, '0');
 
+  const contactLine = businessPhone ? `\nBilgi: ${businessPhone}` : '';
+
   return `Sayin ${customerName},
 
-${businessName} olarak ${day}.${month}.${year} tarihli ${hour}:${min} saatindeki randevunuzun iptal edildigini bildiririz.
-
-Yeni randevu icin bizimle iletisime gecebilirsiniz.
-
-Saygilarimizla,
-${businessName}`;
+${businessName} ${day}.${month}.${year} - ${hour}:${min} randevunuz iptal edildi.${contactLine}`;
 };
 
 /**
  * Randevu hatırlatma SMS'i hazırla
  * @param {object} appointmentData - Randevu bilgileri
- * @returns {string} - SMS mesajı
+ * @returns {string} - SMS mesajı (≤160 karakter)
  */
 export const prepareAppointmentReminderSMS = (appointmentData) => {
-  const { customerName, appointmentDate, businessName } = appointmentData;
+  const { customerName, appointmentDate, businessName, mapUrl } = appointmentData;
 
   const date  = new Date(appointmentDate);
   const day   = String(date.getDate()).padStart(2, '0');
@@ -252,17 +238,12 @@ export const prepareAppointmentReminderSMS = (appointmentData) => {
   const hour  = String(date.getHours()).padStart(2, '0');
   const min   = String(date.getMinutes()).padStart(2, '0');
 
+  const mapLine = mapUrl ? `\n\nKonum: ${mapUrl}` : '';
+
   return `Sayin ${customerName},
 
-${businessName} olarak yarinki randevunuzu hatirlatmak isteriz.
-
-Tarih: ${day}.${month}.${year}
-Saat : ${hour}:${min}
-
-Zamaninda gelmenizi rica eder, tercihleriniz icin tesekkur ederiz.
-
-Saygilarimizla,
-${businessName}`;
+${businessName} randevunuzu hatirlatiyoruz.
+Tarih: ${day}.${month}.${year} - ${hour}:${min}${mapLine}`;
 };
 
 /**
@@ -289,13 +270,8 @@ Kod 5 dakika icin gecerlidir.`;
 export const prepareSurveySMS = ({ customerName, businessName, surveyUrl }) => {
   return `Sayin ${customerName},
 
-${businessName} ziyaretiniz icin tesekkur ederiz!
-
-Hizmetimizi degerlendirmeniz bize cok yardimci olacaktir:
-${surveyUrl}
-
-Iyi gunler dileriz,
-${businessName}`;
+${businessName} ziyaretiniz icin tesekkurler!
+Degerlendirmeniz: ${surveyUrl}`;
 };
 
 /**

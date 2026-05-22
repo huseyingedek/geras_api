@@ -23,6 +23,8 @@ model Accounts {
   reminderHours        Int                   @default(24) @map("ReminderHours")
   // Müşteri Değerlendirme Anketi
   surveyEnabled        Boolean               @default(false) @map("SurveyEnabled")
+  address              String?               @map("Address")
+  mapUrl               String?               @map("MapUrl")
   // WhatsApp (Meta Cloud API per-salon)
   waEnabled            Boolean               @default(false) @map("WAEnabled")
   waConnected          Boolean               @default(false) @map("WAConnected")

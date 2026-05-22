@@ -34,7 +34,8 @@ const processAppointmentReminders = async () => {
       },
       select: {
         id: true,
-        businessName: true
+        businessName: true,
+        mapUrl: true
       }
     }));
 
@@ -44,7 +45,7 @@ const processAppointmentReminders = async () => {
     // Her işletme için hatırlatma kontrolü
     for (const account of accounts) {
       try {
-        const accountReminders = await processAccountReminders(account.id, account.businessName);
+        const accountReminders = await processAccountReminders(account.id, account.businessName, account.mapUrl);
         totalReminders += accountReminders.total;
         successfulReminders += accountReminders.successful;
       } catch (accountError) {
@@ -60,7 +61,7 @@ const processAppointmentReminders = async () => {
 /**
  * Belirli bir işletme için hatırlatma işlemi
  */
-const processAccountReminders = async (accountId, businessName) => {
+const processAccountReminders = async (accountId, businessName, mapUrl) => {
   const now = new Date();
   
   // Gelecek 48 saat içindeki planlanmış randevuları getir
@@ -158,7 +159,8 @@ const processAccountReminders = async (accountId, businessName) => {
           serviceName: appointment.service.serviceName,
           appointmentDate: appointment.appointmentDate,
           staffName: appointment.staff.fullName,
-          businessName: businessName
+          businessName: businessName,
+          mapUrl: mapUrl || null
         };
 
         const smsMessage = prepareAppointmentReminderSMS(smsData);

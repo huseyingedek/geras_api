@@ -40,14 +40,24 @@ const getWACredentials = async (accountId) => {
   try {
     const account = await prisma.accounts.findUnique({
       where: { id: accountId },
-      select: { waEnabled: true, waConnected: true, waApiKey: true, waChannelId: true }
+      select: {
+        waEnabled: true, waConnected: true, waApiKey: true, waChannelId: true,
+        businessName: true, phone: true, address: true, mapUrl: true
+      }
     });
 
     if (!account?.waEnabled || !account?.waConnected || !account?.waApiKey || !account?.waChannelId) {
       return null;
     }
 
-    return { accessToken: account.waApiKey, phoneNumberId: account.waChannelId };
+    return {
+      accessToken: account.waApiKey,
+      phoneNumberId: account.waChannelId,
+      businessName: account.businessName,
+      phone: account.phone || '',
+      address: account.address || '',
+      mapUrl: account.mapUrl || ''
+    };
   } catch (err) {
     console.error('WA credentials DB hatası:', err.message);
     return null;
@@ -143,74 +153,128 @@ export const sendWhatsAppText = async (to, message, accountId) => {
 
 /* ─────────────────────────────────────────────
    HAZIR MESAJ FORMATLARI
-   Aşağıdaki şablon adlarının Meta WhatsApp Manager'da
-   onaylatılmış olması gerekir.
+   Şablon değişken sırası Meta WhatsApp Manager'daki
+   onaylı şablonlarla birebir eşleşmelidir.
 ───────────────────────────────────────────── */
 
 /**
+ * Tarih ve saati ayrı ayrı formatla
+ */
+export const formatDate = (date) => {
+  const d = new Date(date);
+  const days   = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+  const months = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+                  'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+  return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+};
+
+export const formatTime = (date) => {
+  const d = new Date(date);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+/**
  * Randevu onay mesajı
- * Şablon adı : appointment_confirmation
- * Şablon body: Merhaba {{1}}, {{2}} için randevunuz onaylandı.
- *              Tarih: {{3}} | Uzman: {{4}} | Salon: {{5}}
+ * Şablon: appointment_confirmation
+ * {{1}} müşteri adı, {{2}} salon adı, {{3}} tarih, {{4}} saat,
+ * {{5}} hizmet, {{6}} personel, {{7}} adres, {{8}} telefon
+ * Buton: Konumu Gör → mapUrl
  */
 export const sendAppointmentConfirmationWA = async ({
-  phone, clientName, serviceName, appointmentDate, staffName, businessName, accountId
+  phone, clientName, serviceName, appointmentDate, staffName, accountId
 }) => {
-  const dateStr = formatAppointmentDateTime(appointmentDate);
-  return sendWhatsAppTemplate(phone, 'appointment_confirmation', 'tr', [
+  const creds = await getWACredentials(accountId);
+  if (!creds) return { success: false, skipped: true, reason: 'WA_NOT_CONFIGURED' };
+
+  const components = [
     {
       type: 'body',
       parameters: [
         { type: 'text', text: clientName },
+        { type: 'text', text: creds.businessName },
+        { type: 'text', text: formatDate(appointmentDate) },
+        { type: 'text', text: formatTime(appointmentDate) },
         { type: 'text', text: serviceName },
-        { type: 'text', text: dateStr },
         { type: 'text', text: staffName },
-        { type: 'text', text: businessName }
+        { type: 'text', text: creds.address || '-' },
+        { type: 'text', text: creds.phone || '-' }
       ]
     }
-  ], accountId);
+  ];
+
+  if (creds.mapUrl) {
+    components.push({
+      type: 'button',
+      sub_type: 'url',
+      index: '0',
+      parameters: [{ type: 'text', text: creds.mapUrl }]
+    });
+  }
+
+  return sendWhatsAppTemplate(phone, 'appointment_confirmation', 'tr', components, accountId);
 };
 
 /**
  * Randevu hatırlatma mesajı
- * Şablon adı : appointment_reminder
- * Şablon body: Merhaba {{1}}, yarın {{2}} için randevunuz var.
- *              Tarih: {{3}} | Uzman: {{4}} | Salon: {{5}}
+ * Şablon: appointment_reminder
+ * {{1}} müşteri adı, {{2}} salon adı, {{3}} tarih, {{4}} saat,
+ * {{5}} hizmet, {{6}} personel, {{7}} adres, {{8}} telefon
+ * Buton: Konumu Gör → mapUrl
  */
 export const sendAppointmentReminderWA = async ({
-  phone, clientName, serviceName, appointmentDate, staffName, businessName, accountId
+  phone, clientName, serviceName, appointmentDate, staffName, accountId
 }) => {
-  const dateStr = formatAppointmentDateTime(appointmentDate);
-  return sendWhatsAppTemplate(phone, 'appointment_reminder', 'tr', [
+  const creds = await getWACredentials(accountId);
+  if (!creds) return { success: false, skipped: true, reason: 'WA_NOT_CONFIGURED' };
+
+  const components = [
     {
       type: 'body',
       parameters: [
         { type: 'text', text: clientName },
+        { type: 'text', text: creds.businessName },
+        { type: 'text', text: formatDate(appointmentDate) },
+        { type: 'text', text: formatTime(appointmentDate) },
         { type: 'text', text: serviceName },
-        { type: 'text', text: dateStr },
         { type: 'text', text: staffName },
-        { type: 'text', text: businessName }
+        { type: 'text', text: creds.address || '-' },
+        { type: 'text', text: creds.phone || '-' }
       ]
     }
-  ], accountId);
+  ];
+
+  if (creds.mapUrl) {
+    components.push({
+      type: 'button',
+      sub_type: 'url',
+      index: '0',
+      parameters: [{ type: 'text', text: creds.mapUrl }]
+    });
+  }
+
+  return sendWhatsAppTemplate(phone, 'appointment_reminder', 'tr', components, accountId);
 };
 
 /**
  * Randevu iptal mesajı
- * Şablon adı : appointment_cancelled
- * Şablon body: Merhaba {{1}}, {{2}} tarihindeki {{3}} randevunuz iptal edilmiştir.
+ * Şablon: appointment_cancelled
+ * {{1}} müşteri adı, {{2}} salon adı, {{3}} tarih, {{4}} saat, {{5}} telefon
  */
 export const sendAppointmentCancellationWA = async ({
-  phone, clientName, serviceName, appointmentDate, accountId
+  phone, clientName, appointmentDate, accountId
 }) => {
-  const dateStr = formatAppointmentDateTime(appointmentDate);
+  const creds = await getWACredentials(accountId);
+  if (!creds) return { success: false, skipped: true, reason: 'WA_NOT_CONFIGURED' };
+
   return sendWhatsAppTemplate(phone, 'appointment_cancelled', 'tr', [
     {
       type: 'body',
       parameters: [
         { type: 'text', text: clientName },
-        { type: 'text', text: dateStr },
-        { type: 'text', text: serviceName }
+        { type: 'text', text: creds.businessName },
+        { type: 'text', text: formatDate(appointmentDate) },
+        { type: 'text', text: formatTime(appointmentDate) },
+        { type: 'text', text: creds.phone || '-' }
       ]
     }
   ], accountId);

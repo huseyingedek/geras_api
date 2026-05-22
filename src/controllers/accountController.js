@@ -250,6 +250,8 @@ const getProfile = async (req, res, next) => {
           email:                 true,
           phone:                 true,
           businessType:          true,
+          address:               true,
+          mapUrl:                true,
           isOnboardingCompleted: true,
           isDemoAccount:         true,
           demoStatus:            true,
@@ -296,12 +298,14 @@ const updateProfile = async (req, res, next) => {
     // email/phone hem prefixli hem plain kabul edilir
     const businessEmail  = bizSrc.businessEmail !== undefined ? bizSrc.businessEmail : bizSrc.email;
     const businessPhone  = bizSrc.businessPhone !== undefined ? bizSrc.businessPhone : bizSrc.phone;
+    const address        = bizSrc.address;
+    const mapUrl         = bizSrc.mapUrl;
 
     const username  = userSrc.username;
     const userEmail = userSrc.userEmail !== undefined ? userSrc.userEmail : userSrc.email;
     const userPhone = userSrc.userPhone !== undefined ? userSrc.userPhone : userSrc.phone;
 
-    const hasBusinessUpdate = businessName !== undefined || contactPerson !== undefined || businessEmail !== undefined || businessPhone !== undefined;
+    const hasBusinessUpdate = businessName !== undefined || contactPerson !== undefined || businessEmail !== undefined || businessPhone !== undefined || address !== undefined || mapUrl !== undefined;
     const hasUserUpdate     = username !== undefined || userEmail !== undefined || userPhone !== undefined;
 
     if (!hasBusinessUpdate && !hasUserUpdate) {
@@ -329,12 +333,14 @@ const updateProfile = async (req, res, next) => {
               ...(contactPerson !== undefined && { contactPerson }),
               ...(businessEmail !== undefined && { email: businessEmail }),
               ...(businessPhone !== undefined && { phone: businessPhone }),
+              ...(address       !== undefined && { address }),
+              ...(mapUrl        !== undefined && { mapUrl }),
             },
-            select: { id: true, businessName: true, contactPerson: true, email: true, phone: true, businessType: true }
+            select: { id: true, businessName: true, contactPerson: true, email: true, phone: true, businessType: true, address: true, mapUrl: true }
           })
         : prisma.accounts.findUnique({
             where: { id: accountId },
-            select: { id: true, businessName: true, contactPerson: true, email: true, phone: true, businessType: true }
+            select: { id: true, businessName: true, contactPerson: true, email: true, phone: true, businessType: true, address: true, mapUrl: true }
           }),
 
       hasUserUpdate

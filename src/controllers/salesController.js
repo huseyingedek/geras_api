@@ -84,15 +84,55 @@ const getDateRange = (period) => {
     case 'thisMonth':
       const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
       startOfMonth.setHours(0, 0, 0, 0);
-      
-      const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0); // Ayın son günü
+
+      const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
       endOfMonth.setHours(23, 59, 59, 999);
-      
+
       return {
         startDate: startOfMonth,
         endDate: endOfMonth
       };
-    
+
+    case 'lastMonth':
+      const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      startOfLastMonth.setHours(0, 0, 0, 0);
+
+      const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+      endOfLastMonth.setHours(23, 59, 59, 999);
+
+      return {
+        startDate: startOfLastMonth,
+        endDate: endOfLastMonth
+      };
+
+    case 'lastWeek':
+      const startOfLastWeek = new Date(today);
+      const lastWeekDay = startOfLastWeek.getDay();
+      const lastWeekDiff = lastWeekDay === 0 ? -13 : -6 - (lastWeekDay - 1);
+      startOfLastWeek.setDate(startOfLastWeek.getDate() + lastWeekDiff);
+      startOfLastWeek.setHours(0, 0, 0, 0);
+
+      const endOfLastWeek = new Date(startOfLastWeek);
+      endOfLastWeek.setDate(endOfLastWeek.getDate() + 6);
+      endOfLastWeek.setHours(23, 59, 59, 999);
+
+      return {
+        startDate: startOfLastWeek,
+        endDate: endOfLastWeek
+      };
+
+    case 'last2Months':
+      const startOf2MonthsAgo = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      startOf2MonthsAgo.setHours(0, 0, 0, 0);
+
+      const endOf2MonthsAgo = new Date(today);
+      endOf2MonthsAgo.setHours(23, 59, 59, 999);
+
+      return {
+        startDate: startOf2MonthsAgo,
+        endDate: endOf2MonthsAgo
+      };
+
     default:
       return null;
   }

@@ -322,16 +322,17 @@ export const createQuickAppointment = async (req, res) => {
         // SMS gönderme kontrolü (sadece işletme ayarları)
         const account = await prisma.accounts.findUnique({
           where: { id: accountId },
-          select: { smsEnabled: true, businessName: true }
+          select: { smsEnabled: true, businessName: true, phone: true, mapUrl: true }
         });
-        
+
         if (account?.smsEnabled) {
           const smsData = {
             customerName: `${firstName} ${lastName}`,
             serviceName: service.serviceName,
             appointmentDate: appointmentDate,
             staffName: staff.fullName,
-            businessName: account?.businessName || 'Bizim Işletme'
+            businessName: account?.businessName || 'Bizim Işletme',
+            mapUrl: account?.mapUrl || null
           };
 
           const smsMessage = prepareAppointmentSMS(smsData);
@@ -353,7 +354,7 @@ export const createQuickAppointment = async (req, res) => {
           serviceName: service.serviceName,
           appointmentDate,
           staffName: staff.fullName,
-          businessName: account?.businessName || 'Bizim İşletme'
+          accountId
         }).catch(err => console.error('❌ WA onay hatası (hızlı randevu):', err.message));
 
       } catch (smsError) {
@@ -696,16 +697,17 @@ export const createAppointment = async (req, res) => {
         // SMS gönderme kontrolü (sadece işletme ayarları)
         const account = await prisma.accounts.findUnique({
           where: { id: accountId },
-          select: { smsEnabled: true, businessName: true }
+          select: { smsEnabled: true, businessName: true, phone: true, mapUrl: true }
         });
-        
+
         if (account?.smsEnabled) {
           const smsData = {
             customerName: `${appointment.client.firstName} ${appointment.client.lastName}`,
             serviceName: saleItem?.service?.serviceName || appointment.service?.serviceName || 'Paket Satış',
             appointmentDate: appointmentDate,
             staffName: appointment.staff?.fullName || '',
-            businessName: account?.businessName || 'Bizim Işletme'
+            businessName: account?.businessName || 'Bizim Işletme',
+            mapUrl: account?.mapUrl || null
           };
 
           const smsMessage = prepareAppointmentSMS(smsData);
@@ -724,7 +726,7 @@ export const createAppointment = async (req, res) => {
             serviceName: smsData.serviceName,
             appointmentDate,
             staffName: appointment.staff?.fullName || '',
-            businessName: account?.businessName || 'Bizim İşletme'
+            accountId
           }).catch(err => console.error('❌ WA onay hatası (randevu):', err.message));
 
         } else {
@@ -823,18 +825,42 @@ const getAppointmentDateRange = (period) => {
       };
     
     case 'nextMonth':
-      // 🆕 GELECEK AY FİLTRESİ
       const nextMonthStart = new Date(today.getFullYear(), today.getMonth() + 1, 1);
       nextMonthStart.setHours(0, 0, 0, 0);
-      
+
       const nextMonthEnd = new Date(today.getFullYear(), today.getMonth() + 2, 0);
       nextMonthEnd.setHours(23, 59, 59, 999);
-      
+
       return {
         startDate: nextMonthStart,
         endDate: nextMonthEnd
       };
-    
+
+    case 'lastWeek':
+      const lastWeekEnd = new Date(today);
+      const lastWeekCurrentDay = lastWeekEnd.getDay();
+      const daysToLastSunday = lastWeekCurrentDay === 0 ? 7 : lastWeekCurrentDay;
+      lastWeekEnd.setDate(lastWeekEnd.getDate() - daysToLastSunday);
+      lastWeekEnd.setHours(23, 59, 59, 999);
+      const lastWeekStart = new Date(lastWeekEnd);
+      lastWeekStart.setDate(lastWeekEnd.getDate() - 6);
+      lastWeekStart.setHours(0, 0, 0, 0);
+      return { startDate: lastWeekStart, endDate: lastWeekEnd };
+
+    case 'lastMonth':
+      const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      lastMonthStart.setHours(0, 0, 0, 0);
+      const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+      lastMonthEnd.setHours(23, 59, 59, 999);
+      return { startDate: lastMonthStart, endDate: lastMonthEnd };
+
+    case 'last2Months':
+      const last2MonthsStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      last2MonthsStart.setHours(0, 0, 0, 0);
+      const last2MonthsEnd = new Date(today);
+      last2MonthsEnd.setHours(23, 59, 59, 999);
+      return { startDate: last2MonthsStart, endDate: last2MonthsEnd };
+
     default:
       return null;
   }
@@ -1259,15 +1285,16 @@ export const updateAppointment = async (req, res) => {
       try {
         const account = await prisma.accounts.findUnique({
           where: { id: accountId },
-          select: { smsEnabled: true, businessName: true }
+          select: { smsEnabled: true, businessName: true, phone: true }
         });
-        
+
         if (account?.smsEnabled) {
           const smsData = {
             customerName: `${result.client.firstName} ${result.client.lastName}`,
             serviceName: result.service?.serviceName || 'Paket Satış',
             appointmentDate: result.appointmentDate,
-            businessName: account.businessName
+            businessName: account.businessName,
+            businessPhone: account.phone || null
           };
 
           const smsMessage = prepareAppointmentCancelSMS(smsData);
@@ -1283,9 +1310,8 @@ export const updateAppointment = async (req, res) => {
           sendAppointmentCancellationWA({
             phone: result.client.phone,
             clientName: `${result.client.firstName} ${result.client.lastName}`,
-            serviceName: result.service?.serviceName || 'Randevu',
             appointmentDate: result.appointmentDate,
-            businessName: account.businessName
+            accountId
           }).catch(err => console.error('❌ WA iptal hatası:', err.message));
 
         } else {
@@ -1329,7 +1355,7 @@ export const updateAppointment = async (req, res) => {
             serviceName: result.service?.serviceName || 'Randevu',
             appointmentDate: result.appointmentDate,
             staffName: result.staff?.fullName || '',
-            businessName: account.businessName
+            accountId
           }).catch(err => console.error('❌ WA onay hatası (online randevu):', err.message));
 
         } else {
@@ -2263,7 +2289,7 @@ export const validateAppointmentTime = async (req, res) => {
         lte: endOfDay
       },
       status: {
-        not: 'CANCELLED'
+        notIn: ['CANCELLED', 'NO_SHOW']
       }
     };
 
