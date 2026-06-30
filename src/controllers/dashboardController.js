@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma.js';
+import { resolveDateRange } from '../lib/dateRange.js';
 
 export const getDashboardStats = async (req, res) => {
   try {
@@ -312,68 +313,15 @@ export const getServiceSalesReport = async (req, res) => {
       });
     }
 
+    // Tarih aralığı — TÜM raporlarla ORTAK çözümleyici (yerel/Türkiye günü).
+    // Tarih/period yoksa filtre uygulanmaz (tüm zamanlar).
     let dateFilter = {};
-    
     if (startDate && endDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      
-      dateFilter = {
-        gte: start,
-        lte: end
-      };
+      const range = resolveDateRange({ startDate, endDate });
+      dateFilter = { gte: range.gte, lte: range.lte };
     } else if (period) {
-      const now = new Date();
-      
-      switch (period) {
-        case 'day':
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const todayEnd = new Date();
-          todayEnd.setHours(23, 59, 59, 999);
-          
-          dateFilter = {
-            gte: today,
-            lte: todayEnd
-          };
-          break;
-          
-        case 'week':
-          const weekStart = new Date();
-          weekStart.setDate(now.getDate() - 7);
-          weekStart.setHours(0, 0, 0, 0);
-          
-          dateFilter = {
-            gte: weekStart,
-            lte: now
-          };
-          break;
-          
-        case 'month':
-          const monthStart = new Date();
-          monthStart.setDate(1);
-          monthStart.setHours(0, 0, 0, 0);
-          
-          dateFilter = {
-            gte: monthStart,
-            lte: now
-          };
-          break;
-          
-        default:
-          // Default olarak bu ay
-          const defaultStart = new Date();
-          defaultStart.setDate(1);
-          defaultStart.setHours(0, 0, 0, 0);
-          
-          dateFilter = {
-            gte: defaultStart,
-            lte: now
-          };
-      }
+      const range = resolveDateRange({ period });
+      dateFilter = { gte: range.gte, lte: range.lte };
     }
 
     // İki ayrı sorgu: Satışlar ve Ödemeler

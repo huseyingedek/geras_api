@@ -1,67 +1,17 @@
 import prisma from '../lib/prisma.js';
+import { resolveDateRange } from '../lib/dateRange.js';
 
-// 📊 Tarih filtreleme helper fonksiyonu — tüm periyotlar desteklenir
-// ✅ TIMEZONE FIX: UTC kullanarak tarih oluştur (Prisma uyumlu)
+// 📊 Tarih filtreleme helper — ORTAK çözümleyiciye delege eder (yerel/Türkiye günü).
+// Tüm raporlarla aynı gün sınırlarını üretir. Dönüş alanları {startDate, endDate}.
+const KNOWN_PERIODS = new Set([
+  'today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'last2Months',
+  'this_week', 'last_week', 'this_month', 'last_month', 'last_2_months', 'this_year', 'week', 'month', 'day'
+]);
+
 const getDateRange = (period) => {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const d = now.getDate();
-
-  const utcStart = (yr, mo, dy) => new Date(Date.UTC(yr, mo, dy, 0, 0, 0, 0));
-  const utcEnd   = (yr, mo, dy) => new Date(Date.UTC(yr, mo, dy, 23, 59, 59, 999));
-
-  switch (period) {
-    case 'today':
-      return { startDate: utcStart(y, m, d), endDate: utcEnd(y, m, d) };
-
-    case 'yesterday': {
-      const yest = new Date(y, m, d - 1);
-      return { startDate: utcStart(yest.getFullYear(), yest.getMonth(), yest.getDate()),
-               endDate:   utcEnd  (yest.getFullYear(), yest.getMonth(), yest.getDate()) };
-    }
-
-    case 'thisWeek': {
-      const dow = now.getDay();
-      const diff = dow === 0 ? -6 : 1 - dow; // Pazartesi
-      const ws = new Date(y, m, d + diff);
-      const we = new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + 6);
-      return { startDate: utcStart(ws.getFullYear(), ws.getMonth(), ws.getDate()),
-               endDate:   utcEnd  (we.getFullYear(), we.getMonth(), we.getDate()) };
-    }
-
-    case 'lastWeek': {
-      const dow = now.getDay();
-      const diff = dow === 0 ? -6 : 1 - dow;
-      const thisWs = new Date(y, m, d + diff);
-      const lws = new Date(thisWs.getFullYear(), thisWs.getMonth(), thisWs.getDate() - 7);
-      const lwe = new Date(lws.getFullYear(), lws.getMonth(), lws.getDate() + 6);
-      return { startDate: utcStart(lws.getFullYear(), lws.getMonth(), lws.getDate()),
-               endDate:   utcEnd  (lwe.getFullYear(), lwe.getMonth(), lwe.getDate()) };
-    }
-
-    case 'thisMonth': {
-      const lastDay = new Date(y, m + 1, 0).getDate();
-      return { startDate: utcStart(y, m, 1), endDate: utcEnd(y, m, lastDay) };
-    }
-
-    case 'lastMonth': {
-      const lm = new Date(y, m - 1, 1);
-      const lastDayLm = new Date(lm.getFullYear(), lm.getMonth() + 1, 0).getDate();
-      return { startDate: utcStart(lm.getFullYear(), lm.getMonth(), 1),
-               endDate:   utcEnd  (lm.getFullYear(), lm.getMonth(), lastDayLm) };
-    }
-
-    case 'last2Months': {
-      const twoMoAgo = new Date(y, m - 1, 1); // geçen ayın 1'i
-      const lastDay  = new Date(y, m + 1, 0).getDate(); // bu ayın son günü
-      return { startDate: utcStart(twoMoAgo.getFullYear(), twoMoAgo.getMonth(), 1),
-               endDate:   utcEnd  (y, m, lastDay) };
-    }
-
-    default:
-      return null;
-  }
+  if (!period || !KNOWN_PERIODS.has(period)) return null;
+  const r = resolveDateRange({ period });
+  return { startDate: r.gte, endDate: r.lte };
 };
 
 // 📊 TÜM GİDERLERİ LİSTELE
@@ -89,12 +39,12 @@ export const getAllExpenses = async (req, res) => {
     } else if (startDate || endDate) {
       dateFilter = {};
       if (startDate) {
-        const [yr, mo, dy] = startDate.split('-').map(Number);
-        dateFilter.startDate = new Date(Date.UTC(yr, mo - 1, dy, 0, 0, 0, 0));
+        const r = resolveDateRange({ startDate, endDate: startDate });
+        dateFilter.startDate = r.gte;
       }
       if (endDate) {
-        const [yr, mo, dy] = endDate.split('-').map(Number);
-        dateFilter.endDate = new Date(Date.UTC(yr, mo - 1, dy, 23, 59, 59, 999));
+        const r = resolveDateRange({ startDate: endDate, endDate });
+        dateFilter.endDate = r.lte;
       }
     }
 

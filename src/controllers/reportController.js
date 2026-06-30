@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma.js';
+import { resolveDateRange } from '../lib/dateRange.js';
 
 /**
  * 📊 GELİR-GİDER ÖZET RAPORU
@@ -14,226 +15,11 @@ export const getIncomeExpenseSummary = async (req, res) => {
     const { accountId } = req.user;
     const { period, startDate, endDate } = req.query;
 
-    // Tarih filtresi oluştur
-    let dateFilter = {};
-    let periodLabel = '';
-
-    // ÖNCE startDate ve endDate kontrol et (frontend'den gelen custom tarih)
-    if (startDate && endDate) {
-      // Custom tarih aralığı
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      
-      dateFilter = {
-        gte: start,
-        lte: end
-      };
-      
-      // Tarih aralığını Türkçe formatla
-      const monthNames = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
-      const startDay = start.getDate();
-      const startMonth = monthNames[start.getMonth()];
-      const endDay = end.getDate();
-      const endMonth = monthNames[end.getMonth()];
-      const endYear = end.getFullYear();
-      
-      // Aynı ay içindeyse: "5 - 12 Şub 2026"
-      // Farklı aylardaysa: "28 Oca - 5 Şub 2026"
-      if (start.getMonth() === end.getMonth()) {
-        periodLabel = `${startDay} - ${endDay} ${endMonth} ${endYear}`;
-      } else {
-        periodLabel = `${startDay} ${startMonth} - ${endDay} ${endMonth} ${endYear}`;
-      }
-      
-    } else {
-      // Preset periyotlar
-      const now = new Date();
-      
-      switch (period) {
-        case 'today':
-          // Bugünün başlangıcı ve sonu - UTC tarih olarak
-          const todayNow = new Date();
-          const todayStart = new Date(Date.UTC(
-            todayNow.getUTCFullYear(),
-            todayNow.getUTCMonth(),
-            todayNow.getUTCDate(),
-            0, 0, 0, 0
-          ));
-          const todayEnd = new Date(Date.UTC(
-            todayNow.getUTCFullYear(),
-            todayNow.getUTCMonth(),
-            todayNow.getUTCDate(),
-            23, 59, 59, 999
-          ));
-          
-          dateFilter = {
-            gte: todayStart,
-            lte: todayEnd
-          };
-          periodLabel = 'Bugün';
-          break;
-          
-        case 'yesterday':
-          // Dünün başlangıcı ve sonu - UTC tarih olarak
-          const yesterdayNow = new Date();
-          const yesterdayStart = new Date(Date.UTC(
-            yesterdayNow.getUTCFullYear(),
-            yesterdayNow.getUTCMonth(),
-            yesterdayNow.getUTCDate() - 1,
-            0, 0, 0, 0
-          ));
-          const yesterdayEnd = new Date(Date.UTC(
-            yesterdayNow.getUTCFullYear(),
-            yesterdayNow.getUTCMonth(),
-            yesterdayNow.getUTCDate() - 1,
-            23, 59, 59, 999
-          ));
-          
-          dateFilter = {
-            gte: yesterdayStart,
-            lte: yesterdayEnd
-          };
-          periodLabel = 'Dün';
-          break;
-          
-        case 'this_week':
-          // Bu haftanın Pazartesi'si ve bugünün sonu - UTC olarak
-          const weekNow = new Date();
-          
-          // UTC tarihine göre haftanın günü
-          const weekDayOfWeek = weekNow.getUTCDay();
-          const daysToMonday = weekDayOfWeek === 0 ? 6 : weekDayOfWeek - 1;
-          
-          const weekStartUTC = new Date(Date.UTC(
-            weekNow.getUTCFullYear(),
-            weekNow.getUTCMonth(),
-            weekNow.getUTCDate() - daysToMonday,
-            0, 0, 0, 0
-          ));
-          
-          const weekEnd = new Date(Date.UTC(
-            weekNow.getUTCFullYear(),
-            weekNow.getUTCMonth(),
-            weekNow.getUTCDate(),
-            23, 59, 59, 999
-          ));
-          
-          dateFilter = {
-            gte: weekStartUTC,
-            lte: weekEnd
-          };
-          periodLabel = 'Bu Hafta';
-          break;
-          
-        case 'last_week':
-          const lastWeekStart = new Date();
-          const lastWeekDayOfWeek = lastWeekStart.getDay();
-          const daysToLastMonday = lastWeekDayOfWeek === 0 ? 13 : lastWeekDayOfWeek + 6;
-          lastWeekStart.setDate(lastWeekStart.getDate() - daysToLastMonday);
-          lastWeekStart.setHours(0, 0, 0, 0);
-          
-          const lastWeekEnd = new Date(lastWeekStart);
-          lastWeekEnd.setDate(lastWeekStart.getDate() + 6);
-          lastWeekEnd.setHours(23, 59, 59, 999);
-          
-          dateFilter = {
-            gte: lastWeekStart,
-            lte: lastWeekEnd
-          };
-          periodLabel = 'Geçen Hafta';
-          break;
-          
-        case 'this_month':
-          // UTC olarak ayın 1'ini oluştur
-          const now_month = new Date();
-          const monthStart = new Date(Date.UTC(
-            now_month.getFullYear(),
-            now_month.getMonth(),
-            1,
-            0, 0, 0, 0
-          ));
-          
-          dateFilter = {
-            gte: monthStart,
-            lte: now
-          };
-          periodLabel = 'Bu Ay';
-          break;
-          
-        case 'last_month':
-          // Geçen ayın ilk ve son günü (UTC)
-          const lastMonth_now = new Date();
-          const lastMonthStart = new Date(Date.UTC(
-            lastMonth_now.getFullYear(),
-            lastMonth_now.getMonth() - 1,
-            1,
-            0, 0, 0, 0
-          ));
-          
-          const lastMonthEnd = new Date(Date.UTC(
-            lastMonth_now.getFullYear(),
-            lastMonth_now.getMonth(),
-            0,
-            23, 59, 59, 999
-          ));
-          
-          dateFilter = {
-            gte: lastMonthStart,
-            lte: lastMonthEnd
-          };
-          periodLabel = 'Geçen Ay';
-          break;
-          
-        case 'last_2_months': {
-          const l2m_now = new Date();
-          // Geçen ayın 1'i → bu ayın son günü
-          const last2MonthsStart = new Date(Date.UTC(
-            l2m_now.getFullYear(),
-            l2m_now.getMonth() - 1,
-            1,
-            0, 0, 0, 0
-          ));
-          const last2MonthsEnd = new Date(Date.UTC(
-            l2m_now.getFullYear(),
-            l2m_now.getMonth() + 1,
-            0,
-            23, 59, 59, 999
-          ));
-          dateFilter = { gte: last2MonthsStart, lte: last2MonthsEnd };
-          periodLabel = 'Son 2 Ay';
-          break;
-        }
-
-        case 'this_year':
-          const yearStart = new Date(Date.UTC(now.getFullYear(), 0, 1, 0, 0, 0, 0));
-
-          dateFilter = {
-            gte: yearStart,
-            lte: now
-          };
-          periodLabel = 'Bu Yıl';
-          break;
-
-        default:
-          // Default: Bu ay
-          const default_now = new Date();
-          const defaultStart = new Date(Date.UTC(
-            default_now.getFullYear(),
-            default_now.getMonth(),
-            1,
-            0, 0, 0, 0
-          ));
-          
-          dateFilter = {
-            gte: defaultStart,
-            lte: now
-          };
-          periodLabel = 'Bu Ay';
-      }
-    }
+    // Tarih aralığı — TÜM raporlarla ORTAK çözümleyici (yerel/Türkiye günü).
+    // Satış listesi/dashboard ile aynı gün sınırlarını üretir → rakamlar uyuşur.
+    const range = resolveDateRange({ period, startDate, endDate });
+    const dateFilter = { gte: range.gte, lte: range.lte };
+    const periodLabel = range.label;
 
     // ===================================================
     // 💰 GELİRLER (INCOME) - Tamamlanan Ödemeler
@@ -288,8 +74,14 @@ export const getIncomeExpenseSummary = async (req, res) => {
 
     payments.forEach(payment => {
       const amount = parseFloat(payment.amountPaid);
+      if (isNaN(amount)) return;
       totalIncome += amount;
-      incomeByPaymentMethod[payment.paymentMethod] += amount;
+      // Bilinmeyen ödeme yöntemleri "OTHER" altında toplanır (NaN oluşmasını önler)
+      if (incomeByPaymentMethod[payment.paymentMethod] !== undefined) {
+        incomeByPaymentMethod[payment.paymentMethod] += amount;
+      } else {
+        incomeByPaymentMethod.OTHER += amount;
+      }
     });
 
     // ===================================================
@@ -412,17 +204,21 @@ export const getIncomeExpenseSummary = async (req, res) => {
     const netProfit   = totalIncome - totalExpenses;
     const profitMargin = totalSales > 0 ? ((grossProfit / totalSales) * 100) : 0;
 
-    // Son 30 gün karşılaştırması için (trend analizi)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    thirtyDaysAgo.setHours(0, 0, 0, 0);
+    // Önceki dönem karşılaştırması (trend):
+    // Seçili dönemle AYNI uzunlukta, hemen ondan önce gelen periyot kullanılır.
+    // Böylece "Bugün", "Bu Yıl" vb. her periyot kendi öncesiyle adil karşılaştırılır.
+    const currentStart = dateFilter.gte || new Date();
+    const currentEnd   = dateFilter.lte || new Date();
+    const periodMs     = Math.max(0, currentEnd.getTime() - currentStart.getTime());
+    const previousEnd   = new Date(currentStart.getTime() - 1);
+    const previousStart = new Date(currentStart.getTime() - periodMs - 1);
 
     const previousPeriodPayments = await prisma.payments.aggregate({
       where: {
         status: 'COMPLETED',
         paymentDate: {
-          gte: thirtyDaysAgo,
-          lt: dateFilter.gte || new Date()
+          gte: previousStart,
+          lte: previousEnd
         },
         sale: {
           accountId: accountId,
@@ -438,17 +234,18 @@ export const getIncomeExpenseSummary = async (req, res) => {
       where: {
         AccountID: accountId,
         ExpenseDate: {
-          gte: thirtyDaysAgo,
-          lt: dateFilter.gte || new Date()
+          gte: previousStart,
+          lte: previousEnd
         }
       },
+      // Nakit esaslı: güncel dönem giderleri gibi burada da yalnızca ÖDENEN tutar sayılır
       _sum: {
-        Amount: true
+        PaidAmount: true
       }
     });
 
     const previousIncome = parseFloat(previousPeriodPayments._sum.amountPaid || 0);
-    const previousExpenses = parseFloat(previousPeriodExpenses._sum.Amount || 0);
+    const previousExpenses = parseFloat(previousPeriodExpenses._sum.PaidAmount || 0);
     const previousProfit = previousIncome - previousExpenses;
 
     // Değişim yüzdeleri
@@ -556,9 +353,9 @@ export const getIncomeExpenseSummary = async (req, res) => {
         // Periyot bilgisi
         period: {
           label: periodLabel,
-          type: period || 'custom',
-          startDate: dateFilter.gte?.toISOString().split('T')[0],
-          endDate: dateFilter.lte?.toISOString().split('T')[0]
+          type: range.type,
+          startDate: range.startStr,
+          endDate: range.endStr
         },
 
         // Meta bilgiler
@@ -591,11 +388,8 @@ export const debugPayments = async (req, res) => {
 
     let dateFilter = {};
     if (startDate && endDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      dateFilter = { gte: start, lte: end };
+      const range = resolveDateRange({ startDate, endDate });
+      dateFilter = { gte: range.gte, lte: range.lte };
     }
 
     // TÜM ödemeleri çek (status fark etmeksizin)
@@ -1072,22 +866,9 @@ export const getDetailedFinancialReport = async (req, res) => {
     const { accountId } = req.user;
     const { period, startDate, endDate, groupBy = 'day' } = req.query;
 
-    // Tarih filtresi (yukarıdaki ile aynı mantık)
-    let dateFilter = {};
-    
-    if (startDate && endDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      dateFilter = { gte: start, lte: end };
-    } else {
-      const now = new Date();
-      const monthStart = new Date();
-      monthStart.setDate(1);
-      monthStart.setHours(0, 0, 0, 0);
-      dateFilter = { gte: monthStart, lte: now };
-    }
+    // Tarih filtresi — ortak çözümleyici (yerel/Türkiye günü)
+    const range = resolveDateRange({ period, startDate, endDate });
+    const dateFilter = { gte: range.gte, lte: range.lte };
 
     // Gelirler
     const payments = await prisma.payments.findMany({
@@ -1195,8 +976,8 @@ export const getDetailedFinancialReport = async (req, res) => {
         timeline,
         groupBy,
         period: {
-          startDate: dateFilter.gte?.toISOString().split('T')[0],
-          endDate: dateFilter.lte?.toISOString().split('T')[0]
+          startDate: range.startStr,
+          endDate: range.endStr
         }
       }
     });

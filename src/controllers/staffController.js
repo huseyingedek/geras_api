@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import AppError from '../utils/AppError.js';
 import ErrorCodes from '../utils/errorCodes.js';
 import prisma from '../lib/prisma.js'; // Merkezi instance kullan
+import { resolveDateRange } from '../lib/dateRange.js';
 import { assignResourcePermissionsToStaff } from '../utils/permissionUtils.js';
 import { checkPlanLimit } from '../utils/planLimitChecker.js';
 
@@ -805,24 +806,23 @@ export const getCommissionReport = async (req, res) => {
     const { accountId } = req.user;
     const { period, startDate, endDate, staffId } = req.query;
 
-    // Tarih aralığı hesapla
+    // Tarih aralığı — TÜM raporlarla ORTAK çözümleyici (yerel/Türkiye günü)
     let dateFilter = {};
-    const now = new Date();
-
     if (period && period !== 'custom') {
-      const periodMap = {
-        today: { gte: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0), lte: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59) },
-        thisWeek: (() => { const d = new Date(now); d.setDate(d.getDate() - d.getDay() + 1); d.setHours(0,0,0,0); const e = new Date(d); e.setDate(e.getDate() + 6); e.setHours(23,59,59,999); return { gte: d, lte: e }; })(),
-        thisMonth: { gte: new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0), lte: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59) },
-        lastMonth: { gte: new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0), lte: new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59) },
-      };
-      dateFilter = periodMap[period] || {};
-    } else if (startDate || endDate) {
-      if (startDate) { const [y, m, d] = startDate.split('-').map(Number); dateFilter.gte = new Date(Date.UTC(y, m - 1, d, 0, 0, 0)); }
-      if (endDate)   { const [y, m, d] = endDate.split('-').map(Number);   dateFilter.lte = new Date(Date.UTC(y, m - 1, d, 23, 59, 59)); }
+      const range = resolveDateRange({ period });
+      dateFilter = { gte: range.gte, lte: range.lte };
+    } else if (startDate && endDate) {
+      const range = resolveDateRange({ startDate, endDate });
+      dateFilter = { gte: range.gte, lte: range.lte };
+    } else if (startDate) {
+      const range = resolveDateRange({ startDate, endDate: startDate });
+      dateFilter.gte = range.gte;
+    } else if (endDate) {
+      const range = resolveDateRange({ startDate: endDate, endDate });
+      dateFilter.lte = range.lte;
     } else {
-      // Varsayılan: bu ay
-      dateFilter = { gte: new Date(now.getFullYear(), now.getMonth(), 1), lte: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59) };
+      const range = resolveDateRange({ period: 'this_month' });
+      dateFilter = { gte: range.gte, lte: range.lte };
     }
 
     // Personelleri ve komisyon oranlarını getir

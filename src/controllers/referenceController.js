@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma.js';
+import { resolveDateRange } from '../lib/dateRange.js';
 
 // 📊 TÜM REFERANS KAYNAKLARINI LİSTELE
 export const getAllReferences = async (req, res) => {
@@ -248,18 +249,18 @@ export const getReferenceStats = async (req, res) => {
     const { period, startDate, endDate } = req.query;
 
     // Tarih filtresi
+    // Tarih filtresi — sadece tarih verildiyse uygula (yoksa tüm zamanlar).
+    // Ortak çözümleyici ile yerel/Türkiye günü sınırı.
     let dateFilter = {};
-    if (startDate || endDate) {
-      if (startDate) {
-        const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
-        dateFilter.gte = start;
-      }
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        dateFilter.lte = end;
-      }
+    if (startDate && endDate) {
+      const range = resolveDateRange({ startDate, endDate });
+      dateFilter = { gte: range.gte, lte: range.lte };
+    } else if (startDate) {
+      const range = resolveDateRange({ startDate, endDate: startDate });
+      dateFilter.gte = range.gte;
+    } else if (endDate) {
+      const range = resolveDateRange({ startDate: endDate, endDate });
+      dateFilter.lte = range.lte;
     }
 
     // Referans kaynaklarına göre müşteri sayısı (satış değil!)
@@ -329,97 +330,49 @@ export const getReferencePerformanceReport = async (req, res) => {
     console.log('- startDate:', startDate);
     console.log('- endDate:', endDate);
 
-    // Tarih filtresi oluştur
-    let dateFilter = {};
-    let periodLabel = '';
+    // Tarih aralığı — TÜM raporlarla ORTAK çözümleyici (yerel/Türkiye günü)
+    const range = resolveDateRange({ period, startDate, endDate });
+    const dateFilter = { gte: range.gte, lte: range.lte };
+    const periodLabel = range.label;
 
-    if (startDate && endDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      dateFilter = { gte: start, lte: end };
-      
-      const monthNames = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
-      const startDay = start.getDate();
-      const startMonth = monthNames[start.getMonth()];
-      const endDay = end.getDate();
-      const endMonth = monthNames[end.getMonth()];
-      const endYear = end.getFullYear();
-      
-      if (start.getMonth() === end.getMonth()) {
-        periodLabel = `${startDay} - ${endDay} ${endMonth} ${endYear}`;
-      } else {
-        periodLabel = `${startDay} ${startMonth} - ${endDay} ${endMonth} ${endYear}`;
-      }
-    } else {
-      const now = new Date();
-      
-      switch (period) {
-        case 'this_month':
-          const monthStart = new Date(Date.UTC(
-            now.getFullYear(),
-            now.getMonth(),
-            1,
-            0, 0, 0, 0
-          ));
-          dateFilter = { gte: monthStart, lte: now };
-          periodLabel = 'Bu Ay';
-          break;
-          
-        case 'last_month':
-          const lastMonth_now = new Date();
-          const lastMonthStart = new Date(Date.UTC(
-            lastMonth_now.getFullYear(),
-            lastMonth_now.getMonth() - 1,
-            1,
-            0, 0, 0, 0
-          ));
-          const lastMonthEnd = new Date(Date.UTC(
-            lastMonth_now.getFullYear(),
-            lastMonth_now.getMonth(),
-            0,
-            23, 59, 59, 999
-          ));
-          dateFilter = { gte: lastMonthStart, lte: lastMonthEnd };
-          periodLabel = 'Geçen Ay';
-          break;
-          
-        case 'this_year':
-          const yearStart = new Date(Date.UTC(now.getFullYear(), 0, 1, 0, 0, 0, 0));
-          dateFilter = { gte: yearStart, lte: now };
-          periodLabel = 'Bu Yıl';
-          break;
-          
-        default:
-          // Default: Bu ay
-          const defaultStart = new Date(Date.UTC(
-            now.getFullYear(),
-            now.getMonth(),
-            1,
-            0, 0, 0, 0
-          ));
-          dateFilter = { gte: defaultStart, lte: now };
-          periodLabel = 'Bu Ay';
-      }
-    }
+    // İKİ AYRI ÖLÇÜ — birbirine karışmasın diye ayrı kaynaklardan hesaplanır:
+    //  • SATIŞ metrikleri (Satış Tutarı / Adedi): SATIŞ TARİHİNE göre — dönemde YAPILAN satışlar.
+    //  • KASA / TAHSİLAT metrikleri: ÖDEME TARİHİNE göre — dönemde kasaya GİREN para.
+    // Böylece toplamlar Gelir-Gider raporundaki "Toplam Satış" ve "Toplam Tahsilat" ile birebir uyuşur.
+    const dateApplied = Object.keys(dateFilter).length > 0;
 
-    // Gelir-Gider raporuyla aynı mantık: ÖDEME TARİHİNE göre filtrele
-    // Tüm ödemeleri çekip JS tarafında referanslı/referanssız ayır
-    const allPayments = await prisma.payments.findMany({
+    // 1) Dönemde YAPILAN satışlar (satış tarihine göre)
+    const sales = await prisma.sales.findMany({
+      where: {
+        accountId: accountId,
+        isDeleted: false,
+        ...(dateApplied && { saleDate: dateFilter })
+      },
+      select: {
+        id: true,
+        totalAmount: true,
+        reference_id: true,
+        reference_sources: {
+          select: { id: true, reference_type: true, reference_name: true }
+        },
+        payments: {
+          where: { status: 'COMPLETED' },
+          select: { amountPaid: true }
+        }
+      }
+    });
+
+    // 2) Dönemde kasaya GİREN tamamlanmış ödemeler (ödeme tarihine göre)
+    const periodPayments = await prisma.payments.findMany({
       where: {
         status: 'COMPLETED',
-        ...(Object.keys(dateFilter).length > 0 && { paymentDate: dateFilter }),
-        sale: {
-          accountId: accountId,
-          isDeleted: false
-        }
+        ...(dateApplied && { paymentDate: dateFilter }),
+        sale: { accountId: accountId, isDeleted: false }
       },
-      include: {
+      select: {
+        amountPaid: true,
         sale: {
           select: {
-            id: true,
-            totalAmount: true,
             reference_id: true,
             reference_sources: {
               select: { id: true, reference_type: true, reference_name: true }
@@ -429,75 +382,76 @@ export const getReferencePerformanceReport = async (req, res) => {
       }
     });
 
-    console.log('📊 Toplam COMPLETED ödeme sayısı (dönem):', allPayments.length);
+    console.log('📊 Dönemde yapılan satış:', sales.length, '| Dönemde alınan ödeme:', periodPayments.length);
 
-    // JS tarafında ayır
+    // Referans bazında birleşik istatistik tablosu
     const referenceStats = {};
-    let totalPaid = 0;
-    let noRefPaid = 0;
-    let noRefPaymentCount = 0;
-    let noRefSalesAmount = 0;
-
-    // Her satışı bir kez saymak için (sale.totalAmount tekrar eklenmesini önle)
-    const processedSaleIds = new Set();
-
-    allPayments.forEach(payment => {
-      const sale = payment.sale;
-      const paidAmount = parseFloat(payment.amountPaid);
-      const saleAmount = parseFloat(sale.totalAmount);
-      const refId = sale.reference_id;
-
-      if (!refId) {
-        noRefPaid += paidAmount;
-        noRefPaymentCount++;
-        if (!processedSaleIds.has(sale.id)) {
-          noRefSalesAmount += saleAmount;
-          processedSaleIds.add(sale.id);
-        }
-        return;
-      }
-
-      // Referanslı
-      const ref = sale.reference_sources;
+    const ensureRef = (refId, ref) => {
       if (!referenceStats[refId]) {
         referenceStats[refId] = {
           referenceId: refId,
           referenceName: ref?.reference_name || 'Bilinmiyor',
           referenceType: ref?.reference_type || 'unknown',
-          paymentCount: 0,
           saleCount: 0,
           totalSalesAmount: 0,
-          totalPaid: 0,
-          _saleIds: new Set()
+          _salesCollected: 0, // dönem satışlarından tahsil edilen (borç hesabı için)
+          totalPaid: 0,       // KASA: ödeme tarihine göre dönemde giren para
+          paymentCount: 0
         };
       }
+      return referenceStats[refId];
+    };
 
-      referenceStats[refId].paymentCount++;
-      referenceStats[refId].totalPaid += paidAmount;
-      totalPaid += paidAmount;
-
-      // Satış tutarını sadece bir kez ekle
-      if (!referenceStats[refId]._saleIds.has(sale.id)) {
-        referenceStats[refId]._saleIds.add(sale.id);
-        referenceStats[refId].totalSalesAmount += saleAmount;
+    // --- SATIŞ metrikleri (satış tarihine göre) ---
+    let noRefSalesAmount = 0;
+    let noRefSaleCount = 0;
+    sales.forEach(sale => {
+      const saleAmount = parseFloat(sale.totalAmount) || 0;
+      const collected = sale.payments.reduce((s, p) => s + (parseFloat(p.amountPaid) || 0), 0);
+      const refId = sale.reference_id;
+      if (!refId) {
+        noRefSalesAmount += saleAmount;
+        noRefSaleCount += 1;
+        return;
       }
+      const r = ensureRef(refId, sale.reference_sources);
+      r.saleCount += 1;
+      r.totalSalesAmount += saleAmount;
+      r._salesCollected += collected;
     });
 
-    // saleCount, averageOrderValue, remainingDebt hesapla — _saleIds temizle
+    // --- KASA / TAHSİLAT metrikleri (ödeme tarihine göre) ---
+    let noRefPaid = 0;
+    let noRefPaymentCount = 0;
+    periodPayments.forEach(p => {
+      const amount = parseFloat(p.amountPaid) || 0;
+      const refId = p.sale?.reference_id;
+      if (!refId) {
+        noRefPaid += amount;
+        noRefPaymentCount += 1;
+        return;
+      }
+      const r = ensureRef(refId, p.sale.reference_sources);
+      r.totalPaid += amount;
+      r.paymentCount += 1;
+    });
+
+    // Türetilmiş alanlar
     Object.values(referenceStats).forEach(ref => {
-      ref.saleCount = ref._saleIds.size;
       ref.totalSalesAmount = parseFloat(ref.totalSalesAmount.toFixed(2));
       ref.totalPaid = parseFloat(ref.totalPaid.toFixed(2));
-      ref.remainingDebt = parseFloat(Math.max(0, ref.totalSalesAmount - ref.totalPaid).toFixed(2));
+      ref.remainingDebt = parseFloat(Math.max(0, ref.totalSalesAmount - ref._salesCollected).toFixed(2));
       ref.averageOrderValue = ref.saleCount > 0
         ? parseFloat((ref.totalSalesAmount / ref.saleCount).toFixed(2))
         : 0;
-      delete ref._saleIds;
+      delete ref._salesCollected;
     });
 
     const result = Object.values(referenceStats).sort((a, b) => b.totalSalesAmount - a.totalSalesAmount);
-    const grandTotalPaid = totalPaid + noRefPaid;
-    const grandTotalSalesAmount = result.reduce((s, r) => s + r.totalSalesAmount, 0) + noRefSalesAmount;
+    const totalPaid = parseFloat(result.reduce((s, r) => s + r.totalPaid, 0).toFixed(2)); // referanslı kasa
+    const referralPaymentCount = result.reduce((s, r) => s + r.paymentCount, 0);
+    const grandTotalPaid = parseFloat((totalPaid + noRefPaid).toFixed(2));
+    const grandTotalSalesAmount = parseFloat((result.reduce((s, r) => s + r.totalSalesAmount, 0) + noRefSalesAmount).toFixed(2));
 
     const resultWithPercentages = result.map(ref => ({
       ...ref,
@@ -506,10 +460,7 @@ export const getReferencePerformanceReport = async (req, res) => {
         : 0
     }));
 
-    console.log('📊 Referanslı toplam satış:', result.reduce((s, r) => s + r.totalSalesAmount, 0).toFixed(2));
-    console.log('📊 Referanslı toplam tahsilat:', totalPaid.toFixed(2));
-    console.log('📊 Referanssız toplam:', noRefPaid.toFixed(2));
-    console.log('📊 Grand total:', grandTotalPaid.toFixed(2));
+    console.log('📊 Referanslı satış:', (grandTotalSalesAmount - noRefSalesAmount).toFixed(2), '| Referanslı kasa:', totalPaid.toFixed(2), '| Grand kasa:', grandTotalPaid.toFixed(2));
 
     res.json({
       success: true,
@@ -518,7 +469,7 @@ export const getReferencePerformanceReport = async (req, res) => {
         totalReferences: result.length,
 
         // Referanslı
-        referralPaymentCount: allPayments.length - noRefPaymentCount,
+        referralPaymentCount: referralPaymentCount,
         referralTotalSalesAmount: parseFloat(result.reduce((s, r) => s + r.totalSalesAmount, 0).toFixed(2)),
         referralTotalPaid: parseFloat(totalPaid.toFixed(2)),
 
@@ -535,9 +486,9 @@ export const getReferencePerformanceReport = async (req, res) => {
       },
       period: {
         label: periodLabel,
-        type: period || 'custom',
-        startDate: dateFilter.gte?.toISOString().split('T')[0],
-        endDate: dateFilter.lte?.toISOString().split('T')[0]
+        type: range.type,
+        startDate: range.startStr,
+        endDate: range.endStr
       }
     });
 
